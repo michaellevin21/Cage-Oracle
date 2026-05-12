@@ -1,0 +1,23 @@
+# Virtual environment
+.venv/
+
+# SQLite databases (regenerate locally)
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Environment / secrets
+.env
+.env.*
+
+# Tools
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
