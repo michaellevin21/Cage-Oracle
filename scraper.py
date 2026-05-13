@@ -15,7 +15,7 @@ import argparse
 import sqlite3
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass
 
 import requests
@@ -131,7 +131,9 @@ def parse_date_to_unix(text: str) -> int | None:
     text = text.strip().replace(".", "")
     for fmt in ("%b %d, %Y", "%B %d, %Y"):
         try:
-            return int(datetime.strptime(text, fmt).timestamp())
+            dt = datetime.strptime(text, fmt)
+            # UTC avoids Windows OSError(22) from naive datetime.timestamp() + localtime.
+            return int(dt.replace(tzinfo=timezone.utc).timestamp())
         except ValueError:
             continue
     return None
