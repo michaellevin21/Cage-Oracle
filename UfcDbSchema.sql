@@ -8,8 +8,6 @@ CREATE TABLE IF NOT EXISTS events (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     ufc_event_id   TEXT    NOT NULL UNIQUE,
     name           TEXT    NOT NULL,
-    location       TEXT,
-    venue          TEXT,
     event_date     INTEGER NOT NULL  -- Unix timestamp
 );
 
@@ -47,8 +45,7 @@ CREATE TABLE IF NOT EXISTS fights (
     result_round         INTEGER,
     result_time_seconds  REAL,
     weight_class         TEXT,
-    is_title_fight       INTEGER NOT NULL DEFAULT 0 CHECK (is_title_fight IN (0, 1)),
-    fight_date           INTEGER NOT NULL -- Unix timestamp
+    is_title_fight       INTEGER NOT NULL DEFAULT 0 CHECK (is_title_fight IN (0, 1))
 );
 
 -- ─────────────────────────────────────────
