@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS fighters (
     height_cm      INTEGER,
     weight_class   TEXT,
     date_of_birth  INTEGER,             -- Unix timestamp
-    status         TEXT,                -- Active, Retired, Released
     archetype      TEXT,                -- Populated in Week 5
     momentum_score REAL,                -- Populated in Week 7
     profile_url    TEXT,

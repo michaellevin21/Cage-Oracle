@@ -1,9 +1,6 @@
 # Virtual environment
 .venv/
 
-# SQLite databases (regenerate locally)
-*.db
-
 # Python
 __pycache__/
 *.py[cod]

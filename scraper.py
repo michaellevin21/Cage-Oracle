@@ -7,6 +7,9 @@ fighter_rankings (from ufc.com official rankings - name-matched to DB).
 Usage:
     python scraper.py                    # full catalog: all fighters + all fights (slow)
     python scraper.py 0d8011111be000b2   # single fighter by ufcstats id
+    python scraper.py --sync-recent      # fighters on completed cards in the last 14 days
+    python scraper.py --sync-recent --since-days 7
+    python scraper.py --rankings-only    # UFC.com rankings only (no ufcstats scraping)
     python scraper.py --limit 12 --delay 0.5   # quick test: first 12 fighters in directory only
     python scraper.py --delay 2.0        # be kinder to the server between requests
 """
@@ -15,7 +18,8 @@ import argparse
 import sqlite3
 import re
 import time
-from datetime import datetime, timezone
+import unicodedata
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 
 import requests
@@ -27,6 +31,7 @@ from bs4 import BeautifulSoup
 # ─────────────────────────────────────────────────────────────
 
 BASE_URL    = "http://ufcstats.com"
+EVENTS_COMPLETED_URL = f"{BASE_URL}/statistics/events/completed?page=all"
 DB_PATH     = "ufc.db"
 HEADERS     = {"User-Agent": "UFC-Matchup-Analyzer/0.1 (personal project)"}
 DELAY       = 1.5  # seconds between requests — be polite to the server
@@ -45,7 +50,6 @@ class Fighter:
     height_cm:      int | None
     weight_class:   str | None
     date_of_birth:  int | None   # Unix timestamp
-    status:         str | None
     profile_url:    str
     last_updated:   int          # Unix timestamp
 
@@ -137,6 +141,12 @@ def parse_date_to_unix(text: str) -> int | None:
         except ValueError:
             continue
     return None
+
+
+def format_unix_date(unix_ts: int) -> str:
+    """Format Unix seconds as a calendar date (Windows-safe for pre-1970 DOBs)."""
+    dt = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=unix_ts)
+    return dt.strftime("%b %d, %Y")
 
 
 def parse_time_to_seconds(text: str) -> float | None:
@@ -388,7 +398,6 @@ def scrape_fighter(fighter_id: str) -> tuple[Fighter, list[FightRow], list[Event
         height_cm     = feet_inches_to_cm(height_raw) if height_raw else None,
         weight_class  = derive_weight_class_from_fighter_page(soup),
         date_of_birth = parse_date_to_unix(dob_raw) if dob_raw and dob_raw != "--" else None,
-        status        = "Active",  # assume active; Week 2 will handle retired detection
         profile_url   = url,
         last_updated  = int(datetime.now().timestamp()),
     )
@@ -596,6 +605,105 @@ def discover_fighter_ids() -> list[str]:
     return sorted(ids)
 
 
+def utc_day_start(dt: datetime | None = None) -> int:
+    """Unix timestamp for 00:00:00 UTC on the given day (default: today)."""
+    dt = dt or datetime.now(timezone.utc)
+    start = datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc)
+    return int(start.timestamp())
+
+
+def discover_completed_events() -> list[Event]:
+    """All events listed on ufcstats completed-events index (includes future dates)."""
+    soup = get_page(EVENTS_COMPLETED_URL)
+    out: list[Event] = []
+    for row in soup.select("tr.b-statistics__table-row"):
+        link = row.select_one('a[href*="event-details"]')
+        if not link:
+            continue
+        event_id = extract_id_from_url(link.get("href", "") or "")
+        if not event_id:
+            continue
+        date_span = row.select_one("span.b-statistics__date")
+        date_text = get_text(date_span)
+        out.append(Event(
+            ufc_event_id=event_id,
+            name=get_text(link),
+            event_date=parse_date_to_unix(date_text) if date_text else None,
+        ))
+    return out
+
+
+def select_events_for_sync(events: list[Event], since_days: int) -> list[Event]:
+    """Completed events with event_date in [today - since_days, today] (UTC)."""
+    today_start = utc_day_start()
+    cutoff = today_start - since_days * 86400
+    selected: list[Event] = []
+    for event in events:
+        if event.event_date is None:
+            continue
+        if event.event_date > today_start:
+            continue
+        if event.event_date < cutoff:
+            continue
+        selected.append(event)
+    selected.sort(key=lambda e: e.event_date or 0)
+    return selected
+
+
+def scrape_event_fighter_ids(event_id: str) -> list[str]:
+    """Fighter ufcstats ids appearing on an event-details page."""
+    url = f"{BASE_URL}/event-details/{event_id}"
+    soup = get_page(url)
+    ids: set[str] = set()
+    for link in soup.select('a[href*="fighter-details"]'):
+        fighter_id = extract_id_from_url(link.get("href", "") or "")
+        if fighter_id:
+            ids.add(fighter_id)
+    return sorted(ids)
+
+
+def sync_recent_events(conn: sqlite3.Connection, since_days: int = 14) -> None:
+    """
+    Refresh fighters who competed on completed cards in the last since_days (UTC).
+    Idempotent: safe to run on a schedule after each UFC event.
+    """
+    print(f"Incremental sync: completed events in the last {since_days} day(s) ...")
+    events = select_events_for_sync(discover_completed_events(), since_days)
+    if not events:
+        print("  No completed events in that window.")
+        return
+
+    print(f"  {len(events)} event(s):")
+    for event in events:
+        when = format_unix_date(event.event_date) if event.event_date else "?"
+        print(f"    - {event.name} ({when})")
+
+    fighter_ids: set[str] = set()
+    for event in events:
+        for fighter_id in scrape_event_fighter_ids(event.ufc_event_id):
+            fighter_ids.add(fighter_id)
+
+    if not fighter_ids:
+        print("  No fighters found on those event pages.")
+        return
+
+    print(f"  Scraping {len(fighter_ids)} unique fighter profile(s) ...")
+    errors = 0
+    for i, fighter_id in enumerate(sorted(fighter_ids), start=1):
+        try:
+            fighter, _n = persist_fighter_bundle(conn, fighter_id)
+            if i == 1 or i % 10 == 0 or i == len(fighter_ids):
+                print(f"  [{i}/{len(fighter_ids)}] {fighter.name} ({fighter_id})")
+        except KeyboardInterrupt:
+            print(f"\nStopped at [{i}/{len(fighter_ids)}]. Database has partial progress.")
+            raise
+        except Exception as exc:
+            errors += 1
+            print(f"  [error] {fighter_id}: {exc}")
+
+    print(f"  Done. {len(fighter_ids)} fighters with {errors} error(s).")
+
+
 def persist_fighter_bundle(conn: sqlite3.Connection, fighter_id: str) -> tuple[Fighter, int]:
     """
     Scrape one fighter, upsert bio, ensure opponent placeholders, insert fights/events.
@@ -651,8 +759,8 @@ def insert_fighter(conn: sqlite3.Connection, f: Fighter) -> int:
     conn.execute("""
         INSERT INTO fighters
             (ufc_id, name, stance, reach_cm, height_cm,
-             weight_class, date_of_birth, status, profile_url, last_updated)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
+             weight_class, date_of_birth, profile_url, last_updated)
+        VALUES (?,?,?,?,?,?,?,?,?)
         ON CONFLICT(ufc_id) DO UPDATE SET
             name          = excluded.name,
             stance        = excluded.stance,
@@ -660,13 +768,12 @@ def insert_fighter(conn: sqlite3.Connection, f: Fighter) -> int:
             height_cm     = excluded.height_cm,
             weight_class  = COALESCE(excluded.weight_class, fighters.weight_class),
             date_of_birth = excluded.date_of_birth,
-            status        = excluded.status,
             profile_url   = excluded.profile_url,
             last_updated  = excluded.last_updated
     """, (
         f.ufc_id, f.name, f.stance,
         f.reach_cm, f.height_cm, f.weight_class, f.date_of_birth,
-        f.status, f.profile_url, f.last_updated,
+        f.profile_url, f.last_updated,
     ))
     row = conn.execute("SELECT id FROM fighters WHERE ufc_id = ?", (f.ufc_id,)).fetchone()
     return row["id"]
@@ -842,26 +949,92 @@ def persist_round_stats_for_fight(
         )
 
 
+_APOSTROPHE_LIKE = "'\u2018\u2019\u201a\u201b\u2032\u02bc\u0060"
+
+# Letters that NFKD does not fold to ASCII (Polish ł, etc.) — map before stripping punctuation.
+_LATIN_TRANSLIT = str.maketrans(
+    {
+        "ł": "l",
+        "ß": "ss",
+        "ø": "o",
+        "đ": "d",
+        "æ": "ae",
+        "œ": "oe",
+    }
+)
+
+
 def normalize_fighter_name(name: str) -> str:
-    return re.sub(r"\s+", " ", (name or "").strip().lower())
+    """
+    Canonical key for matching ufc.com rankings to ufcstats names.
+    Folds accents (Benoît -> benoit), strips apostrophe variants (Lone'er -> loneer),
+    transliterates ł -> l (Jan Błachowicz -> jan blachowicz).
+    """
+    if not name:
+        return ""
+    s = name.strip().lower().translate(_LATIN_TRANSLIT)
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    for ch in _APOSTROPHE_LIKE:
+        s = s.replace(ch, "")
+    s = re.sub(r"[^a-z0-9\s]", "", s)
+    return re.sub(r"\s+", " ", s).strip()
 
 
-def resolve_fighter_id_by_name(conn: sqlite3.Connection, name: str) -> int | None:
-    key = normalize_fighter_name(name)
-    if not key:
+def name_match_keys(name: str) -> list[str]:
+    """
+    Keys to try when linking a display name to fighters.name.
+    For 3+ word names (e.g. Michael Venom Page), also try first + last (michael page).
+    """
+    keys: list[str] = []
+    full = normalize_fighter_name(name)
+    if not full:
+        return keys
+    keys.append(full)
+    parts = full.split()
+    if len(parts) >= 3:
+        first_last = f"{parts[0]} {parts[-1]}"
+        if first_last != full:
+            keys.append(first_last)
+    return keys
+
+
+def build_fighter_name_lookup(conn: sqlite3.Connection) -> dict[str, int]:
+    """Map name_match_keys(name) -> fighters.id (first wins on collision)."""
+    lookup: dict[str, int] = {}
+    for row in conn.execute("SELECT id, name FROM fighters"):
+        fid, raw_name = int(row[0]), row[1]
+        for key in name_match_keys(raw_name):
+            if key not in lookup:
+                lookup[key] = fid
+    return lookup
+
+
+def resolve_fighter_id_by_name(
+    conn: sqlite3.Connection,
+    name: str,
+    *,
+    lookup: dict[str, int] | None = None,
+) -> int | None:
+    keys = name_match_keys(name)
+    if not keys:
+        return None
+    if lookup is not None:
+        for key in keys:
+            fid = lookup.get(key)
+            if fid is not None:
+                return fid
         return None
     row = conn.execute(
         "SELECT id FROM fighters WHERE lower(trim(name)) = ?",
-        (key,),
+        (name.strip().lower(),),
     ).fetchone()
     if row:
         return int(row["id"])
-    row = conn.execute(
-        "SELECT id FROM fighters WHERE replace(lower(trim(name)), '''', '') = ?",
-        (key.replace("'", ""),),
-    ).fetchone()
-    if row:
-        return int(row["id"])
+    for key in keys:
+        for row in conn.execute("SELECT id, name FROM fighters"):
+            if normalize_fighter_name(row["name"]) == key:
+                return int(row["id"])
     return None
 
 
@@ -917,11 +1090,12 @@ def sync_fighter_rankings(conn: sqlite3.Connection) -> tuple[int, int]:
     """Replace fighter_rankings from ufc.com. Returns (inserted, skipped_unmatched)."""
     conn.execute("DELETE FROM fighter_rankings")
     rows = scrape_ufc_rankings_rows()
+    name_lookup = build_fighter_name_lookup(conn)
     now = int(datetime.now().timestamp())
     inserted = 0
     skipped = 0
     for wc, rk, name in rows:
-        fid = resolve_fighter_id_by_name(conn, name)
+        fid = resolve_fighter_id_by_name(conn, name, lookup=name_lookup)
         if not fid:
             skipped += 1
             continue
@@ -967,17 +1141,55 @@ def main() -> None:
         metavar="N",
         help="With no fighter id: only scrape the first N fighters from the A-Z directory (quick test).",
     )
+    parser.add_argument(
+        "--sync-recent",
+        action="store_true",
+        help="Scrape fighters on completed cards in a recent window (see --since-days). For post-event DB updates.",
+    )
+    parser.add_argument(
+        "--since-days",
+        type=int,
+        default=14,
+        metavar="N",
+        help="With --sync-recent: include events whose date falls within the last N UTC days (default: 14).",
+    )
+    parser.add_argument(
+        "--rankings-only",
+        action="store_true",
+        help="Only refresh fighter_rankings from ufc.com (no ufcstats fighter/event scraping).",
+    )
     args = parser.parse_args()
 
     if args.fighter_id and args.limit is not None:
         parser.error("Use either a fighter id or --limit, not both.")
+    if args.sync_recent and args.fighter_id:
+        parser.error("Use either --sync-recent or a fighter id, not both.")
+    if args.sync_recent and args.limit is not None:
+        parser.error("Use either --sync-recent or --limit, not both.")
+    if args.since_days != 14 and not args.sync_recent:
+        parser.error("--since-days requires --sync-recent.")
+    if args.since_days < 1:
+        parser.error("--since-days must be at least 1.")
+    if args.rankings_only and (
+        args.fighter_id or args.sync_recent or args.limit is not None
+    ):
+        parser.error("--rankings-only cannot be combined with a fighter id, --sync-recent, or --limit.")
 
     DELAY = max(0.0, args.delay)
 
     conn = get_connection(DB_PATH)
 
     try:
-        if args.fighter_id:
+        if args.rankings_only:
+            print("Syncing UFC.com rankings only ...")
+            ins, sk = sync_fighter_rankings(conn)
+            print(f"  {ins} rows stored, {sk} names not matched in local fighters table.")
+            print(f"  Database: {DB_PATH}")
+
+        elif args.sync_recent:
+            sync_recent_events(conn, since_days=args.since_days)
+
+        elif args.fighter_id:
             fighter_id = args.fighter_id.strip().lower()
             print(f"Scraping fighter: {fighter_id}")
             fighter, n_fights = persist_fighter_bundle(conn, fighter_id)
@@ -991,8 +1203,8 @@ def main() -> None:
             print(f"  Height:    {fighter.height_cm} cm" if fighter.height_cm else "  Height:    N/A")
             print(f"  Reach:     {fighter.reach_cm} cm" if fighter.reach_cm else "  Reach:     N/A")
             dob = (
-                datetime.fromtimestamp(fighter.date_of_birth).strftime("%b %d, %Y")
-                if fighter.date_of_birth
+                format_unix_date(fighter.date_of_birth)
+                if fighter.date_of_birth is not None
                 else "N/A"
             )
             print(f"  DOB:       {dob}")
@@ -1029,11 +1241,12 @@ def main() -> None:
             print()
             print(f"Done. Processed {len(ids)} fighters with {errors} errors. Database: {DB_PATH}")
 
-        try:
-            ins, sk = sync_fighter_rankings(conn)
-            print(f"  UFC.com rankings: {ins} rows stored, {sk} names not matched in local fighters table.")
-        except Exception as exc:
-            print(f"  [warn] rankings sync failed: {exc}")
+        if not args.rankings_only:
+            try:
+                ins, sk = sync_fighter_rankings(conn)
+                print(f"  UFC.com rankings: {ins} rows stored, {sk} names not matched in local fighters table.")
+            except Exception as exc:
+                print(f"  [warn] rankings sync failed: {exc}")
 
     finally:
         conn.close()
