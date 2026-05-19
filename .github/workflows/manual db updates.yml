@@ -1,0 +1,32 @@
+name: Scraper Schedule
+
+on:
+  schedule:
+    - cron: '0 13 * * 0'  # Sunday 8:00 AM Eastern (UTC-5 winter / UTC-4 summer)
+    - cron: '0 5 * * 3'   # Wednesday midnight Eastern (UTC-5 winter / UTC-4 summer)
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sync recent (Sundays)
+        if: github.event.schedule == '0 13 * * 0'
+        run: python scraper.py --sync-recent --since-days 7
+
+      - name: Rankings only (Wednesdays)
+        if: github.event.schedule == '0 5 * * 3'
+        run: python scraper.py --rankings-only
