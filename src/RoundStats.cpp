@@ -135,6 +135,40 @@ std::vector<RoundStats> RoundStats::listForFight(sqlite3* db, int64_t fight_id) 
     return rows;
 }
 
+RoundStats::OpponentRoundTotals RoundStats::opponentTotalsForFighter(
+    sqlite3* db, int64_t fighter_id) {
+    const char* sql =
+        "SELECT "
+        "  COALESCE(SUM(opp.sig_strikes_attempted), 0), "
+        "  COALESCE(SUM(opp.sig_strikes_landed), 0), "
+        "  COALESCE(SUM(opp.takedowns_attempted), 0), "
+        "  COALESCE(SUM(opp.takedowns_landed), 0) "
+        "FROM round_stats AS self "
+        "INNER JOIN round_stats AS opp "
+        "  ON opp.fight_id = self.fight_id "
+        " AND opp.round_number = self.round_number "
+        " AND opp.fighter_id != self.fighter_id "
+        "WHERE self.fighter_id = ?1";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return {};
+    }
+
+    sqlite3_bind_int64(stmt, 1, fighter_id);
+
+    OpponentRoundTotals totals;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        totals.sig_strikes_attempted = db::columnInt(stmt, 0);
+        totals.sig_strikes_landed = db::columnInt(stmt, 1);
+        totals.takedowns_attempted = db::columnInt(stmt, 2);
+        totals.takedowns_landed = db::columnInt(stmt, 3);
+    }
+
+    sqlite3_finalize(stmt);
+    return totals;
+}
+
 std::vector<RoundStats> RoundStats::listForFighter(sqlite3* db, int64_t fighter_id) {
     const std::string sql =
         "SELECT rs.id, rs.fight_id, rs.fighter_id, rs.round_number, "

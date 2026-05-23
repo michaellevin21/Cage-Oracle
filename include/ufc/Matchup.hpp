@@ -48,6 +48,10 @@ private:
         int total_strikes_attempted = 0;
         int takedowns_landed = 0;
         int takedowns_attempted = 0;
+        int opponent_sig_strikes_landed = 0;
+        int opponent_sig_strikes_attempted = 0;
+        int opponent_takedowns_landed = 0;
+        int opponent_takedowns_attempted = 0;
         int sub_attempts = 0;
         int reversals = 0;
         int knockdowns = 0;
@@ -60,7 +64,14 @@ private:
         int ground_strikes_landed = 0;
 
         static CareerTotals fromRoundStats(const std::vector<RoundStats>& rows);
+        static CareerTotals fromRoundStats(
+            const std::vector<RoundStats>& rows,
+            const RoundStats::OpponentRoundTotals& opponent);
         double accuracy(int landed, int attempted) const;
+        double defensePct(int landed_against, int attempted_against) const;
+        double strikingDefense() const;
+        double takedownDefense() const;
+        double strikesTakenPerRound() const;
         double perRound(int total) const;
         double perRound(double total) const;
     };

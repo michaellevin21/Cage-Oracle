@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
-from ctypes import CDLL, c_char_p, c_int, c_longlong, c_void_p
+from ctypes import CDLL, c_char_p, c_longlong, c_void_p, string_at
 from pathlib import Path
 
 
@@ -16,10 +17,35 @@ def _default_library_name() -> str:
     return "libufc_db.so"
 
 
+def _resolve_library_path(explicit: str | Path | None) -> Path:
+    if explicit is not None:
+        return Path(explicit)
+
+    root = Path(__file__).resolve().parents[1]
+    name = _default_library_name()
+    candidates = [
+        root / "build" / name,
+        root / "build" / "Release" / name,
+        root / "build" / "Debug" / name,
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return candidates[0]
+
+
 class UfcDb:
     def __init__(self, db_path: str | Path, lib_path: str | Path | None = None) -> None:
-        if lib_path is None:
-            lib_path = Path(__file__).resolve().parents[1] / "build" / _default_library_name()
+        lib_path = _resolve_library_path(lib_path)
+        if not lib_path.is_file():
+            raise FileNotFoundError(
+                f"ufc_db shared library not found at {lib_path}. "
+                "Build the C++ project first (cmake --build build --config Release)."
+            )
+
+        if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(str(lib_path.parent))
+
         self._lib = CDLL(str(lib_path))
         self._configure_signatures()
 
@@ -31,27 +57,57 @@ class UfcDb:
     def _configure_signatures(self) -> None:
         lib = self._lib
         lib.ufc_db_close.argtypes = [c_void_p]
-        lib.ufc_free_string.argtypes = [c_char_p]
+        lib.ufc_free_string.argtypes = [c_void_p]
         lib.ufc_last_error.restype = c_char_p
 
+        for name in (
+            "ufc_get_fighter_by_name",
+            "ufc_get_matchup_by_names",
+            "ufc_get_matchup_by_ids",
+        ):
+            fn = getattr(lib, name)
+            fn.restype = c_void_p
         lib.ufc_get_fighter_by_name.argtypes = [c_void_p, c_char_p]
-        lib.ufc_get_fighter_by_name.restype = c_char_p
+        lib.ufc_get_matchup_by_names.argtypes = [c_void_p, c_char_p, c_char_p]
+        lib.ufc_get_matchup_by_ids.argtypes = [c_void_p, c_longlong, c_longlong]
 
     def last_error(self) -> str:
         raw = self._lib.ufc_last_error()
         return raw.decode("utf-8") if raw else ""
 
-    def _take_json(self, ptr: c_char_p):
+    def _take_json(self, ptr: int | None):
         if not ptr:
             return None
         try:
-            return json.loads(ptr.decode("utf-8"))
+            return json.loads(string_at(ptr).decode("utf-8"))
         finally:
             self._lib.ufc_free_string(ptr)
 
     def get_fighter_by_name(self, name: str) -> dict | None:
         ptr = self._lib.ufc_get_fighter_by_name(self._handle, name.encode("utf-8"))
         return self._take_json(ptr)
+
+    def get_matchup_by_names(self, fighter_a: str, fighter_b: str) -> dict | None:
+        ptr = self._lib.ufc_get_matchup_by_names(
+            self._handle, fighter_a.encode("utf-8"), fighter_b.encode("utf-8")
+        )
+        if not ptr:
+            raise LookupError(self.last_error() or "matchup lookup failed")
+        data = self._take_json(ptr)
+        if data is None:
+            raise LookupError(self.last_error() or "matchup lookup failed")
+        return data
+
+    def get_matchup_by_ids(self, fighter_a_id: int, fighter_b_id: int) -> dict | None:
+        ptr = self._lib.ufc_get_matchup_by_ids(
+            self._handle, fighter_a_id, fighter_b_id
+        )
+        if not ptr:
+            raise LookupError(self.last_error() or "matchup lookup failed")
+        data = self._take_json(ptr)
+        if data is None:
+            raise LookupError(self.last_error() or "matchup lookup failed")
+        return data
 
     def close(self) -> None:
         if self._handle:

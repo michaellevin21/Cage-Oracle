@@ -44,6 +44,17 @@ const char* toString(ComparisonAdvantage advantage) {
     return "unknown";
 }
 
+Matchup::CareerTotals Matchup::CareerTotals::fromRoundStats(
+    const std::vector<RoundStats>& rows,
+    const RoundStats::OpponentRoundTotals& opponent) {
+    CareerTotals totals = fromRoundStats(rows);
+    totals.opponent_sig_strikes_attempted = opponent.sig_strikes_attempted;
+    totals.opponent_sig_strikes_landed = opponent.sig_strikes_landed;
+    totals.opponent_takedowns_attempted = opponent.takedowns_attempted;
+    totals.opponent_takedowns_landed = opponent.takedowns_landed;
+    return totals;
+}
+
 Matchup::CareerTotals Matchup::CareerTotals::fromRoundStats(const std::vector<RoundStats>& rows) {
     CareerTotals totals;
     totals.rounds = static_cast<int>(rows.size());
@@ -75,6 +86,26 @@ double Matchup::CareerTotals::accuracy(int landed, int attempted) const {
     return static_cast<double>(landed) / static_cast<double>(attempted);
 }
 
+double Matchup::CareerTotals::defensePct(int landed_against, int attempted_against) const {
+    if (attempted_against == 0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    const int defended = attempted_against - landed_against;
+    return static_cast<double>(defended) / static_cast<double>(attempted_against);
+}
+
+double Matchup::CareerTotals::strikingDefense() const {
+    return defensePct(opponent_sig_strikes_landed, opponent_sig_strikes_attempted);
+}
+
+double Matchup::CareerTotals::takedownDefense() const {
+    return defensePct(opponent_takedowns_landed, opponent_takedowns_attempted);
+}
+
+double Matchup::CareerTotals::strikesTakenPerRound() const {
+    return perRound(opponent_sig_strikes_landed);
+}
+
 double Matchup::CareerTotals::perRound(int total) const {
     if (rounds == 0) {
         return std::numeric_limits<double>::quiet_NaN();
@@ -95,10 +126,12 @@ Matchup::Matchup(Fighter a, Fighter b) : fighter_a(std::move(a)), fighter_b(std:
 
 Matchup Matchup::fromDatabase(sqlite3* db, const Fighter& a, const Fighter& b) {
     Matchup matchup(a, b);
-    const CareerTotals totals_a =
-        CareerTotals::fromRoundStats(RoundStats::listForFighter(db, a.id));
-    const CareerTotals totals_b =
-        CareerTotals::fromRoundStats(RoundStats::listForFighter(db, b.id));
+    const CareerTotals totals_a = CareerTotals::fromRoundStats(
+        RoundStats::listForFighter(db, a.id),
+        RoundStats::opponentTotalsForFighter(db, a.id));
+    const CareerTotals totals_b = CareerTotals::fromRoundStats(
+        RoundStats::listForFighter(db, b.id),
+        RoundStats::opponentTotalsForFighter(db, b.id));
     matchup.buildCareerComparisons(totals_a, totals_b);
     return matchup;
 }
@@ -152,8 +185,11 @@ void Matchup::buildCareerComparisons(const CareerTotals& a, const CareerTotals& 
 
     addNumeric("sig_strikes_landed_per_round", a.perRound(a.sig_strikes_landed), b.perRound(b.sig_strikes_landed));
     addNumeric("sig_strike_accuracy", a.accuracy(a.sig_strikes_landed, a.sig_strikes_attempted), b.accuracy(b.sig_strikes_landed, b.sig_strikes_attempted));
+    addNumeric("striking_defense", a.strikingDefense(), b.strikingDefense());
+    addNumeric("strikes_taken_per_round", a.strikesTakenPerRound(), b.strikesTakenPerRound(), false);
     addNumeric("total_strike_accuracy", a.accuracy(a.total_strikes_landed, a.total_strikes_attempted), b.accuracy(b.total_strikes_landed, b.total_strikes_attempted));
     addNumeric("takedown_accuracy", a.accuracy(a.takedowns_landed, a.takedowns_attempted), b.accuracy(b.takedowns_landed, b.takedowns_attempted));
+    addNumeric("takedown_defense", a.takedownDefense(), b.takedownDefense());
     addNumeric("takedowns_landed_per_round", a.perRound(a.takedowns_landed), b.perRound(b.takedowns_landed));
     addNumeric("sub_attempts_per_round", a.perRound(a.sub_attempts), b.perRound(b.sub_attempts));
     addNumeric("reversals_per_round", a.perRound(a.reversals), b.perRound(b.reversals));

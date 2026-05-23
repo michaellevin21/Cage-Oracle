@@ -42,6 +42,15 @@ public:
     static std::vector<RoundStats> listForFight(sqlite3* db, int64_t fight_id);
     static std::vector<RoundStats> listForFighter(sqlite3* db, int64_t fighter_id);
 
+    /// Opponent striking and takedown totals across all rounds (defense metrics).
+    struct OpponentRoundTotals {
+        int sig_strikes_attempted = 0;
+        int sig_strikes_landed = 0;
+        int takedowns_attempted = 0;
+        int takedowns_landed = 0;
+    };
+    static OpponentRoundTotals opponentTotalsForFighter(sqlite3* db, int64_t fighter_id);
+
 private:
     static RoundStats fromStatement(sqlite3_stmt* stmt);
     static std::vector<RoundStats> fetchAll(sqlite3_stmt* stmt);

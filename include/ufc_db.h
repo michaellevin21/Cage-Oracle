@@ -57,6 +57,12 @@ UFC_DB_API char* ufc_get_round_stat_by_fight_fighter_round(
 UFC_DB_API char* ufc_list_round_stats_for_fight(UfcDb* db, long long fight_id);
 UFC_DB_API char* ufc_list_round_stats_for_fighter(UfcDb* db, long long fighter_id);
 
+/* Matchup (side-by-side profile + career aggregates) */
+UFC_DB_API char* ufc_get_matchup_by_ids(
+    UfcDb* db, long long fighter_a_id, long long fighter_b_id);
+UFC_DB_API char* ufc_get_matchup_by_names(
+    UfcDb* db, const char* fighter_a_name, const char* fighter_b_name);
+
 #ifdef __cplusplus
 }
 #endif

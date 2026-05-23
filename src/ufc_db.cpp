@@ -3,6 +3,7 @@
 #include "ufc/Fight.hpp"
 #include "ufc/Fighter.hpp"
 #include "ufc/JsonSerialize.hpp"
+#include "ufc/Matchup.hpp"
 #include "ufc/RoundStats.hpp"
 #include "ufc/UfcDatabase.hpp"
 
@@ -208,6 +209,45 @@ char* ufc_list_round_stats_for_fighter(UfcDb* db, long long fighter_id) {
     }
     auto stats = ufc::RoundStats::listForFighter(connection(db), fighter_id);
     return duplicateJson(ufc::json::toJsonArray(stats));
+}
+
+char* ufc_get_matchup_by_ids(UfcDb* db, long long fighter_a_id, long long fighter_b_id) {
+    if (!ensureOpen(db)) {
+        return nullptr;
+    }
+    const std::optional<ufc::Fighter> a = ufc::Fighter::getById(connection(db), fighter_a_id);
+    if (!a) {
+        g_last_error = "fighter_a not found";
+        return nullptr;
+    }
+    const std::optional<ufc::Fighter> b = ufc::Fighter::getById(connection(db), fighter_b_id);
+    if (!b) {
+        g_last_error = "fighter_b not found";
+        return nullptr;
+    }
+    const ufc::Matchup matchup = ufc::Matchup::fromDatabase(connection(db), *a, *b);
+    return duplicateJson(ufc::json::toJson(matchup));
+}
+
+char* ufc_get_matchup_by_names(UfcDb* db, const char* fighter_a_name, const char* fighter_b_name) {
+    if (!ensureOpen(db) || !fighter_a_name || !fighter_b_name) {
+        if (!fighter_a_name || !fighter_b_name) {
+            g_last_error = "fighter name is null";
+        }
+        return nullptr;
+    }
+    const std::optional<ufc::Fighter> a = ufc::Fighter::getByName(connection(db), fighter_a_name);
+    if (!a) {
+        g_last_error = std::string("fighter not found: ") + fighter_a_name;
+        return nullptr;
+    }
+    const std::optional<ufc::Fighter> b = ufc::Fighter::getByName(connection(db), fighter_b_name);
+    if (!b) {
+        g_last_error = std::string("fighter not found: ") + fighter_b_name;
+        return nullptr;
+    }
+    const ufc::Matchup matchup = ufc::Matchup::fromDatabase(connection(db), *a, *b);
+    return duplicateJson(ufc::json::toJson(matchup));
 }
 
 }  // extern "C"
