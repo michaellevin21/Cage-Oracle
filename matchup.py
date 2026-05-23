@@ -33,6 +33,32 @@ def _prompt_fighter(label: str) -> str:
         print("Name cannot be empty.", file=sys.stderr)
 
 
+def _prompt_fighter_found(db: UfcDb, label: str) -> str:
+    while True:
+        name = _prompt_fighter(label)
+        if db.get_fighter_by_name(name):
+            return name
+        print(f"Fighter not found: {name}", file=sys.stderr)
+
+
+def _resolve_names(db: UfcDb, fighters: list[str]) -> tuple[str, str] | None:
+    if len(fighters) == 2:
+        name_a, name_b = fighters
+        if not db.get_fighter_by_name(name_a):
+            print(f"Fighter not found: {name_a}", file=sys.stderr)
+            return None
+        return name_a, name_b
+
+    if len(fighters) == 0:
+        print("Enter two fighter names (exact spelling).\n")
+        name_a = _prompt_fighter_found(db, "Fighter A")
+        name_b = _prompt_fighter_found(db, "Fighter B")
+        return name_a, name_b
+
+    print("Provide exactly two fighter names, or none for interactive mode.", file=sys.stderr)
+    return None
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Print a side-by-side tale of the tape for two UFC fighters."
@@ -61,13 +87,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
-    if len(args.fighters) == 2:
-        name_a, name_b = args.fighters
-    elif len(args.fighters) == 0:
-        print("Enter two fighter names (exact spelling as in ufc.db).\n")
-        name_a = _prompt_fighter("Fighter A")
-        name_b = _prompt_fighter("Fighter B")
-    else:
+    if len(args.fighters) not in (0, 2):
         print("Provide exactly two fighter names, or none for interactive mode.", file=sys.stderr)
         return 2
 
@@ -77,6 +97,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         with UfcDb(args.db, lib_path=args.lib) as db:
+            names = _resolve_names(db, args.fighters)
+            if names is None:
+                return 1
+            name_a, name_b = names
             matchup = db.get_matchup_by_names(name_a, name_b)
     except FileNotFoundError as exc:
         print(exc, file=sys.stderr)
