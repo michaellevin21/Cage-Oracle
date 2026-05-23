@@ -101,7 +101,7 @@ char* ufc_get_fighter_by_id(UfcDb* db, long long id) {
     if (!ensureOpen(db)) {
         return nullptr;
     }
-    auto result = ufc::Fighter::getById(connection(db), id);
+    std::optional<ufc::Fighter> result = ufc::Fighter::getById(connection(db), id);
     return result ? duplicateJson(ufc::json::toJson(*result)) : nullptr;
 }
 
@@ -112,7 +112,7 @@ char* ufc_get_fighter_by_ufc_id(UfcDb* db, const char* ufc_id) {
         }
         return nullptr;
     }
-    auto result = ufc::Fighter::getByUfcId(connection(db), ufc_id);
+    std::optional<ufc::Fighter> result = ufc::Fighter::getByUfcId(connection(db), ufc_id);
     return result ? duplicateJson(ufc::json::toJson(*result)) : nullptr;
 }
 
@@ -123,7 +123,7 @@ char* ufc_get_fighter_by_name(UfcDb* db, const char* name) {
         }
         return nullptr;
     }
-    auto result = ufc::Fighter::getByName(connection(db), name);
+    std::optional<ufc::Fighter> result = ufc::Fighter::getByName(connection(db), name);
     return result ? duplicateJson(ufc::json::toJson(*result)) : nullptr;
 }
 
@@ -131,7 +131,7 @@ char* ufc_get_fight_by_id(UfcDb* db, long long id) {
     if (!ensureOpen(db)) {
         return nullptr;
     }
-    auto result = ufc::Fight::getById(connection(db), id);
+    std::optional<ufc::Fight> result = ufc::Fight::getById(connection(db), id);
     return result ? duplicateJson(ufc::json::toJson(*result)) : nullptr;
 }
 
@@ -142,7 +142,7 @@ char* ufc_get_fight_by_ufc_fight_id(UfcDb* db, const char* ufc_fight_id) {
         }
         return nullptr;
     }
-    auto result = ufc::Fight::getByUfcFightId(connection(db), ufc_fight_id);
+    std::optional<ufc::Fight> result = ufc::Fight::getByUfcFightId(connection(db), ufc_fight_id);
     return result ? duplicateJson(ufc::json::toJson(*result)) : nullptr;
 }
 
@@ -154,13 +154,11 @@ char* ufc_get_fights_by_fighters(UfcDb* db, long long fighter1_id, long long fig
     return duplicateJson(ufc::json::toJsonArray(fights));
 }
 
-char* ufc_get_fight_by_fighters_event(
-    UfcDb* db, long long fighter1_id, long long fighter2_id, long long event_id) {
+char* ufc_get_fight_by_fighters_event(UfcDb* db, long long fighter1_id, long long fighter2_id, long long event_id) {
     if (!ensureOpen(db)) {
         return nullptr;
     }
-    auto result = ufc::Fight::getByFightersEvent(
-        connection(db), fighter1_id, fighter2_id, event_id);
+    std::optional<ufc::Fight> result = ufc::Fight::getByFightersEvent(connection(db), fighter1_id, fighter2_id, event_id);
     return result ? duplicateJson(ufc::json::toJson(*result)) : nullptr;
 }
 
@@ -180,23 +178,19 @@ char* ufc_list_fights_for_event(UfcDb* db, long long event_id) {
     return duplicateJson(ufc::json::toJsonArray(fights));
 }
 
-char* ufc_get_round_stats_by_fight_fighter(
-    UfcDb* db, long long fight_id, long long fighter_id) {
+char* ufc_get_round_stats_by_fight_fighter(UfcDb* db, long long fight_id, long long fighter_id) {
     if (!ensureOpen(db)) {
         return nullptr;
     }
-    auto stats = ufc::RoundStats::getByFightFighter(
-        connection(db), fight_id, fighter_id);
+    auto stats = ufc::RoundStats::getByFightFighter(connection(db), fight_id, fighter_id);
     return duplicateJson(ufc::json::toJsonArray(stats));
 }
 
-char* ufc_get_round_stat_by_fight_fighter_round(
-    UfcDb* db, long long fight_id, long long fighter_id, int round_number) {
+char* ufc_get_round_stat_by_fight_fighter_round(UfcDb* db, long long fight_id, long long fighter_id, int round_number) {
     if (!ensureOpen(db)) {
         return nullptr;
     }
-    auto result = ufc::RoundStats::getByFightFighterRound(
-        connection(db), fight_id, fighter_id, round_number);
+    std::optional<ufc::RoundStats> result = ufc::RoundStats::getByFightFighterRound(connection(db), fight_id, fighter_id, round_number);
     return result ? duplicateJson(ufc::json::toJson(*result)) : nullptr;
 }
 

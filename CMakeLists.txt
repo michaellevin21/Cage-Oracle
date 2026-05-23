@@ -10,6 +10,7 @@ set(UFC_DB_SOURCES
     src/Fighter.cpp
     src/Fight.cpp
     src/RoundStats.cpp
+    src/Matchup.cpp
     src/UfcDatabase.cpp
     src/JsonSerialize.cpp
     src/ufc_db.cpp
@@ -17,11 +18,11 @@ set(UFC_DB_SOURCES
 
 add_library(ufc_db_static STATIC ${UFC_DB_SOURCES})
 target_include_directories(ufc_db_static PUBLIC include)
-target_link_libraries(ufc_db_static PUBLIC SQLite::SQLite3)
+target_link_libraries(ufc_db_static PUBLIC SQLite3::SQLite3)
 
 add_library(ufc_db SHARED ${UFC_DB_SOURCES})
 target_include_directories(ufc_db PUBLIC include)
-target_link_libraries(ufc_db PUBLIC SQLite::SQLite3)
+target_link_libraries(ufc_db PUBLIC SQLite3::SQLite3)
 target_compile_definitions(ufc_db PRIVATE UFC_DB_BUILDING)
 set_target_properties(ufc_db PROPERTIES
     OUTPUT_NAME ufc_db

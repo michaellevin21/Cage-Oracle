@@ -2,6 +2,7 @@
 
 #include "ufc/Fight.hpp"
 #include "ufc/Fighter.hpp"
+#include "ufc/Matchup.hpp"
 #include "ufc/RoundStats.hpp"
 
 #include <sstream>
@@ -123,6 +124,38 @@ std::string toJson(const RoundStats& r) {
         << "\"clinch_strikes_landed\":" << r.clinch_strikes_landed << ','
         << "\"ground_strikes_landed\":" << r.ground_strikes_landed
         << '}';
+    return oss.str();
+}
+
+std::string toJson(const StatComparison& c) {
+    std::ostringstream oss;
+    oss << std::setprecision(17);
+    oss << '{'
+        << "\"metric\":" << quote(c.metric) << ','
+        << "\"fighter_a\":" << nullOrDouble(c.fighter_a) << ','
+        << "\"fighter_b\":" << nullOrDouble(c.fighter_b) << ','
+        << "\"delta\":" << nullOrDouble(c.delta) << ','
+        << "\"advantage\":" << quote(toString(c.advantage)) << ','
+        << "\"fighter_a_label\":" << nullOrString(c.fighter_a_label) << ','
+        << "\"fighter_b_label\":" << nullOrString(c.fighter_b_label)
+        << '}';
+    return oss.str();
+}
+
+std::string toJson(const Matchup& m) {
+    std::ostringstream oss;
+    oss << '{'
+        << "\"fighter_a\":" << toJson(m.fighter_a) << ','
+        << "\"fighter_b\":" << toJson(m.fighter_b) << ','
+        << "\"comparisons\":[";
+    const auto& rows = m.comparisons();
+    for (size_t i = 0; i < rows.size(); ++i) {
+        if (i > 0) {
+            oss << ',';
+        }
+        oss << toJson(rows[i]);
+    }
+    oss << "]}";
     return oss.str();
 }
 
