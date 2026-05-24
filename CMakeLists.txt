@@ -8,6 +8,8 @@ find_package(SQLite3 REQUIRED)
 
 set(UFC_DB_SOURCES
     src/Fighter.cpp
+    src/FighterCareerStats.cpp
+    src/FighterArchetype.cpp
     src/Fight.cpp
     src/RoundStats.cpp
     src/Matchup.cpp

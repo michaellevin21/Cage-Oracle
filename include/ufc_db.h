@@ -63,6 +63,9 @@ UFC_DB_API char* ufc_get_matchup_by_ids(
 UFC_DB_API char* ufc_get_matchup_by_names(
     UfcDb* db, const char* fighter_a_name, const char* fighter_b_name);
 
+/* Archetype classification (career round stats) */
+UFC_DB_API char* ufc_classify_archetype_by_fighter_id(UfcDb* db, long long fighter_id);
+
 #ifdef __cplusplus
 }
 #endif

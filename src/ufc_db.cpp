@@ -2,6 +2,7 @@
 
 #include "ufc/Fight.hpp"
 #include "ufc/Fighter.hpp"
+#include "ufc/FighterArchetype.hpp"
 #include "ufc/JsonSerialize.hpp"
 #include "ufc/Matchup.hpp"
 #include "ufc/RoundStats.hpp"
@@ -248,6 +249,15 @@ char* ufc_get_matchup_by_names(UfcDb* db, const char* fighter_a_name, const char
     }
     const ufc::Matchup matchup = ufc::Matchup::fromDatabase(connection(db), *a, *b);
     return duplicateJson(ufc::json::toJson(matchup));
+}
+
+char* ufc_classify_archetype_by_fighter_id(UfcDb* db, long long fighter_id) {
+    if (!ensureOpen(db)) {
+        return nullptr;
+    }
+    const std::optional<ufc::FighterArchetype> archetype =
+        ufc::classifyArchetypeForFighter(connection(db), fighter_id);
+    return archetype ? duplicateString(ufc::toString(*archetype)) : nullptr;
 }
 
 }  // extern "C"
