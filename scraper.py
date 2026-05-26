@@ -178,9 +178,68 @@ def parse_fighter_weight_lbs_from_soup(soup: BeautifulSoup) -> int | None:
 
 
 def _fighter_page_implies_womens(soup: BeautifulSoup) -> bool:
-    """Heuristic: women's divisions often appear in page copy."""
+    """Heuristic: women's divisions often appear in page copy.
+
+    Note: this should not affect men's lbs→division mapping; it only decides whether
+    to use women's vs men's division labels when interpreting the *same* lbs value.
+    """
     sample = soup.get_text(separator=" ", strip=False)[:25000]
-    return bool(re.search(r"Women'?s\s+(?:Strawweight|Flyweight|Bantamweight|Featherweight)", sample, re.I))
+    # UFCStats pages are inconsistent: sometimes the division string is present
+    # ("Women's Strawweight"), sometimes only "Women's" appears elsewhere on the page.
+    return bool(
+        re.search(
+            r"Women'?s(?:\s+(?:Strawweight|Flyweight|Bantamweight|Featherweight))?\b",
+            sample,
+            re.I,
+        )
+    )
+
+def _weight_class_is_womens(label: str | None) -> bool:
+    """True if a weight class label denotes a women's division."""
+    if not label:
+        return False
+    return bool(re.match(r"^\s*Women'?s\b", label, re.I))
+
+
+def _weight_class_is_catchweight(label: str | None) -> bool:
+    """True if a fight was booked at a catchweight (e.g. 'Catchweight', 'Catch Weight')."""
+    if not label:
+        return False
+    return bool(re.search(r"catch\s*weight", label, re.I))
+
+
+def _fights_newest_first(
+    fights: list[FightRow],
+    fight_dates: dict[str, int | None],
+) -> list[str]:
+    """Fight ids in reverse chronological order (profile row order breaks date ties)."""
+    return [
+        fight.ufc_fight_id
+        for _, fight in sorted(
+            enumerate(fights),
+            key=lambda t: (
+                fight_dates.get(t[1].ufc_fight_id) is None,
+                -(fight_dates.get(t[1].ufc_fight_id) or 0),
+                t[0],
+            ),
+        )
+    ]
+
+
+def _infer_womens_from_fight_history(
+    fights: list[FightRow],
+    fight_dates: dict[str, int | None],
+) -> bool:
+    """Use the most recent non-catchweight fight to decide women's vs men's divisions."""
+    for fight_id in _fights_newest_first(fights, fight_dates):
+        try:
+            _entries, wc = scrape_fight_details(fight_id)
+        except Exception:
+            continue
+        if not wc or _weight_class_is_catchweight(wc):
+            continue
+        return _weight_class_is_womens(wc)
+    return False
 
 
 def lbs_to_fighter_weight_class(lbs: int, womens: bool) -> str | None:
@@ -390,22 +449,11 @@ def scrape_fighter(fighter_id: str) -> tuple[Fighter, list[FightRow], list[Event
     reach_raw  = bio.get("reach", "")
     stance     = bio.get("stance") or None
 
-    fighter = Fighter(
-        ufc_id        = fighter_id,
-        name          = name,
-        stance        = stance if stance and stance != "--" else None,
-        reach_cm      = inches_to_cm(reach_raw) if reach_raw and reach_raw != "--" else None,
-        height_cm     = feet_inches_to_cm(height_raw) if height_raw else None,
-        weight_class  = derive_weight_class_from_fighter_page(soup),
-        date_of_birth = parse_date_to_unix(dob_raw) if dob_raw and dob_raw != "--" else None,
-        profile_url   = url,
-        last_updated  = int(datetime.now().timestamp()),
-    )
-
     # ── Fight history ────────────────────────────────────────
 
     fights: list[FightRow] = []
     events: list[Event]    = []
+    fight_dates: dict[str, int | None] = {}  # ufc_fight_id -> event_date_unix
 
     rows = soup.select("tr.b-fight-details__table-row[data-link]")
 
@@ -491,6 +539,7 @@ def scrape_fighter(fighter_id: str) -> tuple[Fighter, list[FightRow], list[Event
             weight_class         = weight_class,
             is_title_fight       = is_title_fight,
         ))
+        fight_dates[fight_id] = event_date_unix
 
         if event_id:
             events.append(Event(
@@ -498,6 +547,25 @@ def scrape_fighter(fighter_id: str) -> tuple[Fighter, list[FightRow], list[Event
                 name         = event_name,
                 event_date   = event_date_unix,
             ))
+
+    # Determine whether this fighter is in a women's division from fight history.
+    # Use the most recent non-catchweight fight; skip catchweights and walk further back.
+    # If there are no fights, or no usable fight weight class is found, womens=False.
+    womens = _infer_womens_from_fight_history(fights, fight_dates) if fights else False
+
+    # Build fighter record after we know whether they're in women's divisions.
+    lbs = parse_fighter_weight_lbs_from_soup(soup)
+    fighter = Fighter(
+        ufc_id        = fighter_id,
+        name          = name,
+        stance        = stance if stance and stance != "--" else None,
+        reach_cm      = inches_to_cm(reach_raw) if reach_raw and reach_raw != "--" else None,
+        height_cm     = feet_inches_to_cm(height_raw) if height_raw else None,
+        weight_class  = lbs_to_fighter_weight_class(lbs, womens) if lbs is not None else None,
+        date_of_birth = parse_date_to_unix(dob_raw) if dob_raw and dob_raw != "--" else None,
+        profile_url   = url,
+        last_updated  = int(datetime.now().timestamp()),
+    )
 
     # Infer fighter weight class from most common weight class in fights
     # (for now just leave it None; patch in Week 2 when we have full fight data)
