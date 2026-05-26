@@ -757,9 +757,13 @@ def sync_recent_events(conn: sqlite3.Connection, since_days: int = 14) -> None:
 
     print(f"  Scraping {len(fighter_ids)} unique fighter profile(s) ...")
     errors = 0
+    fighters_to_refresh: set[int] = set()
     for i, fighter_id in enumerate(sorted(fighter_ids), start=1):
         try:
-            fighter, _n = persist_fighter_bundle(conn, fighter_id)
+            fighter, _n, refreshed = persist_fighter_bundle(
+                conn, fighter_id, refresh_archetypes=False,
+            )
+            fighters_to_refresh.update(refreshed)
             if i == 1 or i % 10 == 0 or i == len(fighter_ids):
                 print(f"  [{i}/{len(fighter_ids)}] {fighter.name} ({fighter_id})")
         except KeyboardInterrupt:
@@ -769,14 +773,78 @@ def sync_recent_events(conn: sqlite3.Connection, since_days: int = 14) -> None:
             errors += 1
             print(f"  [error] {fighter_id}: {exc}")
 
+    if fighters_to_refresh:
+        refresh_fighter_archetypes(conn, fighters_to_refresh)
+        conn.commit()
+        print(f"  Recalculated archetypes for {len(fighters_to_refresh)} fighter(s) with new fight data.")
+    else:
+        print("  No new fight data; archetypes unchanged.")
+
     print(f"  Done. {len(fighter_ids)} fighters with {errors} error(s).")
 
 
-def persist_fighter_bundle(conn: sqlite3.Connection, fighter_id: str) -> tuple[Fighter, int]:
+_archetype_store = None
+_archetype_unavailable = False
+
+
+def _get_archetype_store():
+    """Lazy-open ufc_db shared library for archetype classification."""
+    global _archetype_store, _archetype_unavailable
+    if _archetype_unavailable:
+        return None
+    if _archetype_store is not None:
+        return _archetype_store
+    try:
+        import sys
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent
+        sys.path.insert(0, str(root / "python"))
+        from ufc_db_ffi import UfcDb
+
+        store = UfcDb(DB_PATH)
+        _archetype_store = store
+        return store
+    except (FileNotFoundError, RuntimeError) as exc:
+        _archetype_unavailable = True
+        print(f"  [warn] archetype refresh unavailable: {exc}")
+        return None
+
+
+def close_archetype_store() -> None:
+    global _archetype_store
+    if _archetype_store is not None:
+        _archetype_store.close()
+        _archetype_store = None
+
+
+def refresh_fighter_archetypes(conn: sqlite3.Connection, fighter_db_ids: set[int]) -> None:
+    """Recompute and persist archetype labels for the given internal fighter ids."""
+    if not fighter_db_ids:
+        return
+    store = _get_archetype_store()
+    if not store:
+        return
+    for fighter_id in fighter_db_ids:
+        label = store.classify_archetype_by_fighter_id(fighter_id)
+        if label:
+            conn.execute(
+                "UPDATE fighters SET archetype = ? WHERE id = ?",
+                (label, fighter_id),
+            )
+
+
+def persist_fighter_bundle(
+    conn: sqlite3.Connection,
+    fighter_id: str,
+    *,
+    refresh_archetypes: bool = True,
+) -> tuple[Fighter, int, set[int]]:
     """
     Scrape one fighter, upsert bio, ensure opponent placeholders, insert fights/events.
     One DB transaction per fighter so progress survives interruptions.
-    Returns (fighter, number of fights parsed from the profile).
+    Returns (fighter, number of fights parsed from the profile, internal fighter ids
+    whose archetype should be refreshed due to new fights or new round stats).
     """
     fighter, fights, events = scrape_fighter(fighter_id)
     with conn:
@@ -797,17 +865,30 @@ def persist_fighter_bundle(conn: sqlite3.Connection, fighter_id: str) -> tuple[F
         for opp_id in opponent_ids:
             fighter_id_map[opp_id] = ensure_placeholder_fighter(conn, opp_id)
 
+        new_fight_ids: set[str] = set()
         for fight in fights:
-            insert_fight(conn, fight, fighter_id_map, event_id_map)
+            if insert_fight(conn, fight, fighter_id_map, event_id_map):
+                new_fight_ids.add(fight.ufc_fight_id)
 
+    fighters_to_refresh: set[int] = set()
     for fight in fights:
         try:
-            persist_round_stats_for_fight(conn, fight.ufc_fight_id, fighter_id_map)
+            stats_written, participant_ids = persist_round_stats_for_fight(
+                conn, fight.ufc_fight_id, fighter_id_map,
+            )
+            if stats_written or fight.ufc_fight_id in new_fight_ids:
+                fighters_to_refresh.update(participant_ids)
         except Exception:
-            pass
+            if fight.ufc_fight_id in new_fight_ids:
+                db_fid = get_fight_db_id(conn, fight.ufc_fight_id)
+                if db_fid:
+                    fighters_to_refresh.update(get_fight_participant_db_ids(conn, db_fid))
+
+    if refresh_archetypes:
+        refresh_fighter_archetypes(conn, fighters_to_refresh)
 
     conn.commit()
-    return fighter, len(fights)
+    return fighter, len(fights), fighters_to_refresh
 
 
 # ─────────────────────────────────────────────────────────────
@@ -879,8 +960,8 @@ def ensure_placeholder_fighter(conn: sqlite3.Connection, ufc_id: str) -> int:
 
 
 def insert_fight(conn: sqlite3.Connection, fight: FightRow,
-                 fighter_id_map: dict[str, int], event_id_map: dict[str, int]) -> None:
-    """Insert or ignore a fight row."""
+                 fighter_id_map: dict[str, int], event_id_map: dict[str, int]) -> bool:
+    """Insert or ignore a fight row. Returns True when a new fight row was inserted."""
     f1_id     = fighter_id_map.get(fight.fighter1_ufc_id)
     f2_id     = fighter_id_map.get(fight.fighter2_ufc_id)
     event_id  = event_id_map.get(fight.ufc_event_id)
@@ -888,9 +969,9 @@ def insert_fight(conn: sqlite3.Connection, fight: FightRow,
 
     if not f1_id or not f2_id or not event_id:
         print(f"  [skip] fight {fight.ufc_fight_id} - missing FK reference")
-        return
+        return False
 
-    conn.execute("""
+    cur = conn.execute("""
         INSERT INTO fights
             (ufc_fight_id, fighter1_id, fighter2_id, event_id, winner_id,
              result_method, result_method_detail, result_round,
@@ -903,6 +984,17 @@ def insert_fight(conn: sqlite3.Connection, fight: FightRow,
         fight.result_time_seconds, fight.weight_class,
         fight.is_title_fight,
     ))
+    return cur.rowcount > 0
+
+
+def get_fight_participant_db_ids(conn: sqlite3.Connection, fight_db_id: int) -> list[int]:
+    row = conn.execute(
+        "SELECT fighter1_id, fighter2_id FROM fights WHERE id = ?",
+        (fight_db_id,),
+    ).fetchone()
+    if not row:
+        return []
+    return [int(row["fighter1_id"]), int(row["fighter2_id"])]
 
 
 def get_fight_db_id(conn: sqlite3.Connection, ufc_fight_id: str) -> int | None:
@@ -998,16 +1090,18 @@ def persist_round_stats_for_fight(
     conn: sqlite3.Connection,
     ufc_fight_id: str,
     ufc_to_id: dict[str, int],
-) -> None:
+) -> tuple[bool, list[int]]:
     db_fid = get_fight_db_id(conn, ufc_fight_id)
     if not db_fid:
-        return
+        return False, []
+    participants = get_fight_participant_db_ids(conn, db_fid)
     if not fight_needs_fight_detail_fetch(conn, db_fid):
-        return
+        return False, participants
     try:
         entries, fight_wc = scrape_fight_details(ufc_fight_id)
     except Exception:
-        return
+        return False, participants
+    stats_written = bool(entries)
     if entries:
         upsert_round_stats_batch(conn, db_fid, ufc_to_id, entries)
     if fight_wc:
@@ -1015,6 +1109,7 @@ def persist_round_stats_for_fight(
             "UPDATE fights SET weight_class = ? WHERE id = ?",
             (fight_wc, db_fid),
         )
+    return stats_written, participants
 
 
 _APOSTROPHE_LIKE = "'\u2018\u2019\u201a\u201b\u2032\u02bc\u0060"
@@ -1260,7 +1355,7 @@ def main() -> None:
         elif args.fighter_id:
             fighter_id = args.fighter_id.strip().lower()
             print(f"Scraping fighter: {fighter_id}")
-            fighter, n_fights = persist_fighter_bundle(conn, fighter_id)
+            fighter, n_fights, _refreshed = persist_fighter_bundle(conn, fighter_id)
             print(f"  Saved: {fighter.name} - {n_fights} fights from profile")
 
             print()
@@ -1296,7 +1391,7 @@ def main() -> None:
             errors = 0
             for i, fighter_id in enumerate(ids, start=1):
                 try:
-                    fighter, _n = persist_fighter_bundle(conn, fighter_id)
+                    fighter, _n, _refreshed = persist_fighter_bundle(conn, fighter_id)
                     if i == 1 or i % 25 == 0 or i == len(ids):
                         print(f"  [{i}/{len(ids)}] {fighter.name} ({fighter_id})")
                 except KeyboardInterrupt:
@@ -1317,6 +1412,7 @@ def main() -> None:
                 print(f"  [warn] rankings sync failed: {exc}")
 
     finally:
+        close_archetype_store()
         conn.close()
 
 

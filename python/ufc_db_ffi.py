@@ -70,6 +70,8 @@ class UfcDb:
         lib.ufc_get_fighter_by_name.argtypes = [c_void_p, c_char_p]
         lib.ufc_get_matchup_by_names.argtypes = [c_void_p, c_char_p, c_char_p]
         lib.ufc_get_matchup_by_ids.argtypes = [c_void_p, c_longlong, c_longlong]
+        lib.ufc_classify_archetype_by_fighter_id.restype = c_void_p
+        lib.ufc_classify_archetype_by_fighter_id.argtypes = [c_void_p, c_longlong]
 
     def last_error(self) -> str:
         raw = self._lib.ufc_last_error()
@@ -108,6 +110,15 @@ class UfcDb:
         if data is None:
             raise LookupError(self.last_error() or "matchup lookup failed")
         return data
+
+    def classify_archetype_by_fighter_id(self, fighter_id: int) -> str | None:
+        ptr = self._lib.ufc_classify_archetype_by_fighter_id(self._handle, fighter_id)
+        if not ptr:
+            return None
+        try:
+            return string_at(ptr).decode("utf-8")
+        finally:
+            self._lib.ufc_free_string(ptr)
 
     def close(self) -> None:
         if self._handle:
