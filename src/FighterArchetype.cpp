@@ -20,18 +20,31 @@ constexpr double kGrapplingTakedownLandedWeight = 3.0;
 constexpr double kGrapplingSubAttemptWeight = 4.0;
 constexpr double kGrapplingControlTimeDivisor = 45.0;
 constexpr double kStrikingKnockdownWeight = 2.0;
-constexpr double kGrapplingDominanceStrikeMultiplier = 0.55;
+constexpr double kGrapplingDominanceStrikeMultiplier = 0.52;
 
-// Control Time Specialist (grappling branch).
+// Ground Control Specialist (grappling branch — ground control_time_seconds is primary).
 constexpr double kWrestlerMinTakedownsLandedPerRound = 0.45;
 constexpr double kWrestlerMinTakedownsAttemptedPerRound = 1.0;
 constexpr double kWrestlerMaxSubAttemptsPerRound = 0.12;
+constexpr double kWrestlerMinGroundControlPerRound = 45.0;
 
 // Ground Finisher (grappling branch).
-constexpr double kFinisherMinSubAttemptsPerRound = 0.12;
-constexpr double kFinisherSoftMinSubAttemptsPerRound = 0.06;
-constexpr double kFinisherSoftMinGroundStrikeRatio = 0.12;
-constexpr double kFinisherMinControlTimePerRound = 45.0;
+constexpr double kGroundFinisherMinSubAttemptsPerRound = 0.12;
+constexpr double kGroundFinisherSoftMinSubAttemptsPerRound = 0.06;
+constexpr double kGroundFinisherSoftMinGroundStrikeRatio = 0.12;
+constexpr double kGroundFinisherMinGroundControlPerRound = 45.0;
+
+// Ground Control Specialist (striking branch — must earn label via ground control, not pace/TDs alone).
+constexpr double kControlSpecialistMinGroundControlPerRound = 65.0;
+constexpr double kControlSpecialistMinControlToDistanceStrikeRatio = 3.0;
+constexpr double kControlSpecialistMinTakedownsLandedPerRound = 0.45;
+constexpr double kControlSpecialistMaxSubAttemptsPerRound = 0.08;
+
+// Distance strikers (Counter or Pressure) before All-Around heuristics.
+constexpr double kDistanceStrikerMinDistanceRatio = 0.70;
+constexpr double kDistanceStrikerMaxTakedownsLandedPerRound = 0.50;
+constexpr double kDistanceStrikerMaxSubAttemptsPerRound = 0.20;
+constexpr double kDistanceStrikerCounterMinStrikeDefense = 0.52;
 
 // All-Around Fighter.
 constexpr double kAllAroundMinPace = 5.0;
@@ -45,16 +58,16 @@ constexpr double kPressureStrikerMaxSubAttemptsPerRound = 0.08;
 constexpr double kPressureStrikerMinSigPerRound = 3.5;
 
 // Counter Striker: distance-oriented, defensively sound, limited grappling.
-constexpr double kCounterMinDistanceRatio = 0.62;
-constexpr double kCounterMinStrikeDefense = 0.54;
-constexpr double kCounterMaxTakedownsLandedPerRound = kPressureStrikerMaxTakedownsLandedPerRound;
-constexpr double kCounterMaxTakedownsAttemptedPerRound = 0.60;
-constexpr double kCounterMaxSubAttemptsPerRound = kPressureStrikerMaxSubAttemptsPerRound;
-constexpr double kCounterMaxSigPerRound = 22.0;
-constexpr double kCounterMaxTakenPerRound = 18.0;
-constexpr double kCounterLowVolumeMaxSigPerRound = 5.5;
-constexpr double kCounterLowVolumeMaxTakenPerRound = 5.5;
-constexpr double kCounterLowVolumeMinStrikeDefense = 0.56;
+constexpr double kCounterStrikerMinDistanceRatio = 0.62;
+constexpr double kCounterStrikerMinStrikeDefense = 0.54;
+constexpr double kCounterStrikerMaxTakedownsLandedPerRound = kPressureStrikerMaxTakedownsLandedPerRound;
+constexpr double kCounterStrikerMaxTakedownsAttemptedPerRound = 0.60;
+constexpr double kCounterStrikerMaxSubAttemptsPerRound = kPressureStrikerMaxSubAttemptsPerRound;
+constexpr double kCounterStrikerMaxSigPerRound = 22.0;
+constexpr double kCounterStrikerMaxTakenPerRound = 18.0;
+constexpr double kCounterStrikerLowVolumeMaxSigPerRound = 5.5;
+constexpr double kCounterStrikerLowVolumeMaxTakenPerRound = 5.5;
+constexpr double kCounterStrikerLowVolumeMinStrikeDefense = 0.56;
 
 double ratio(int numerator, int denominator) {
     if (denominator == 0) {
@@ -73,8 +86,8 @@ const char* toString(FighterArchetype archetype) {
     switch (archetype) {
         case FighterArchetype::PressureStriker:
             return "Pressure Striker";
-        case FighterArchetype::ControlTimeSpecialist:
-            return "Control Time Specialist";
+        case FighterArchetype::GroundControlSpecialist:
+            return "Ground Control Specialist";
         case FighterArchetype::GroundFinisher:
             return "Ground Finisher";
         case FighterArchetype::AllAroundFighter:
@@ -88,7 +101,7 @@ const char* toString(FighterArchetype archetype) {
 std::optional<FighterArchetype> parseArchetype(const std::string& label) {
     static const std::array<std::pair<const char*, FighterArchetype>, 5> kLabels = {{
         {"Pressure Striker", FighterArchetype::PressureStriker},
-        {"Control Time Specialist", FighterArchetype::ControlTimeSpecialist},
+        {"Ground Control Specialist", FighterArchetype::GroundControlSpecialist},
         {"Ground Finisher", FighterArchetype::GroundFinisher},
         {"All-Around Fighter", FighterArchetype::AllAroundFighter},
         {"Counter Striker", FighterArchetype::CounterStriker},
@@ -129,41 +142,60 @@ std::optional<FighterArchetype> classifyArchetype(const FighterCareerStats& stat
     if (grappling_index >= striking_index * kGrapplingDominanceStrikeMultiplier) {
         if ((td_landed_per_round >= kWrestlerMinTakedownsLandedPerRound ||
              td_attempted_per_round >= kWrestlerMinTakedownsAttemptedPerRound) &&
-            sub_per_round < kWrestlerMaxSubAttemptsPerRound) {
-            return FighterArchetype::ControlTimeSpecialist;
+            sub_per_round < kWrestlerMaxSubAttemptsPerRound &&
+            control_per_round >= kWrestlerMinGroundControlPerRound) {
+            return FighterArchetype::GroundControlSpecialist;
         }
-        if (sub_per_round >= kFinisherMinSubAttemptsPerRound ||
-            (sub_per_round >= kFinisherSoftMinSubAttemptsPerRound &&
-             ground_ratio >= kFinisherSoftMinGroundStrikeRatio)) {
+        if (sub_per_round >= kGroundFinisherMinSubAttemptsPerRound ||
+            (sub_per_round >= kGroundFinisherSoftMinSubAttemptsPerRound &&
+             ground_ratio >= kGroundFinisherSoftMinGroundStrikeRatio)) {
             return FighterArchetype::GroundFinisher;
         }
         if (td_landed_per_round >= kWrestlerMinTakedownsLandedPerRound ||
             td_attempted_per_round >= kWrestlerMinTakedownsAttemptedPerRound) {
-            return FighterArchetype::ControlTimeSpecialist;
+            return FighterArchetype::GroundControlSpecialist;
         }
-        if (control_per_round >= kFinisherMinControlTimePerRound) {
+        if (control_per_round >= kGroundFinisherMinGroundControlPerRound) {
             return FighterArchetype::GroundFinisher;
         }
-        return FighterArchetype::ControlTimeSpecialist;
+        return FighterArchetype::GroundControlSpecialist;
     }
 
     const double pace = sig_per_round + td_attempted_per_round;
     const bool high_pace = pace >= kAllAroundMinPace;
     const bool mixes_wrestling = td_attempted_per_round >= kAllAroundMinTakedownsAttemptedPerRound;
-    const bool low_grappling = td_landed_per_round < kCounterMaxTakedownsLandedPerRound &&
-                               td_attempted_per_round < kCounterMaxTakedownsAttemptedPerRound &&
-                               sub_per_round < kCounterMaxSubAttemptsPerRound;
-    const bool distance_counter = distance_ratio >= kCounterMinDistanceRatio &&
-                                  strike_defense >= kCounterMinStrikeDefense && low_grappling &&
-                                  sig_per_round <= kCounterMaxSigPerRound &&
-                                  taken_per_round <= kCounterMaxTakenPerRound;
-    const bool low_volume_counter = low_grappling && strike_defense >= kCounterLowVolumeMinStrikeDefense &&
-                                    taken_per_round <= kCounterLowVolumeMaxTakenPerRound &&
-                                    sig_per_round <= kCounterLowVolumeMaxSigPerRound;
+    const bool low_grappling = td_landed_per_round < kCounterStrikerMaxTakedownsLandedPerRound &&
+                               td_attempted_per_round < kCounterStrikerMaxTakedownsAttemptedPerRound &&
+                               sub_per_round < kCounterStrikerMaxSubAttemptsPerRound;
+    const bool distance_counter = distance_ratio >= kCounterStrikerMinDistanceRatio &&
+                                  strike_defense >= kCounterStrikerMinStrikeDefense && low_grappling &&
+                                  sig_per_round <= kCounterStrikerMaxSigPerRound &&
+                                  taken_per_round <= kCounterStrikerMaxTakenPerRound;
+    const bool low_volume_counter = low_grappling && strike_defense >= kCounterStrikerLowVolumeMinStrikeDefense &&
+                                    taken_per_round <= kCounterStrikerLowVolumeMaxTakenPerRound &&
+                                    sig_per_round <= kCounterStrikerLowVolumeMaxSigPerRound;
     const bool range_striker = distance_ratio >= kPressureStrikerMinDistanceRatio &&
                                td_landed_per_round < kPressureStrikerMaxTakedownsLandedPerRound &&
                                sub_per_round < kPressureStrikerMaxSubAttemptsPerRound;
 
+    const double control_to_distance_strikes =
+        distance_strikes_per_round > 0.0 ? control_per_round / distance_strikes_per_round
+                                         : control_per_round;
+    if (control_per_round >= kControlSpecialistMinGroundControlPerRound &&
+        td_landed_per_round >= kControlSpecialistMinTakedownsLandedPerRound &&
+        sub_per_round < kControlSpecialistMaxSubAttemptsPerRound &&
+        control_to_distance_strikes >= kControlSpecialistMinControlToDistanceStrikeRatio) {
+        return FighterArchetype::GroundControlSpecialist;
+    }
+    if (distance_ratio >= kDistanceStrikerMinDistanceRatio &&
+        td_landed_per_round < kDistanceStrikerMaxTakedownsLandedPerRound &&
+        sub_per_round < kDistanceStrikerMaxSubAttemptsPerRound) {
+        if (strike_defense >= kDistanceStrikerCounterMinStrikeDefense &&
+            sig_per_round <= kCounterStrikerMaxSigPerRound && taken_per_round <= kCounterStrikerMaxTakenPerRound) {
+            return FighterArchetype::CounterStriker;
+        }
+        return FighterArchetype::PressureStriker;
+    }
     if (distance_counter || low_volume_counter) {
         return FighterArchetype::CounterStriker;
     }
