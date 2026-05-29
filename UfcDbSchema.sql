@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS fighters (
     height_cm      INTEGER,
     weight_class   TEXT,
     date_of_birth  INTEGER,             -- Unix timestamp
-    archetype      TEXT,                -- Pressure Striker | Ground Control Specialist | Ground Finisher | All-Around Fighter | Counter Striker
+    archetype      TEXT,                -- Pressure Striker | Control Wrestler | Ground Finisher | All-Around Fighter | Counter Striker
     momentum_score REAL,                -- Populated in Week 7
     profile_url    TEXT,
     last_updated   INTEGER              -- Unix timestamp

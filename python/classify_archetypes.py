@@ -2,7 +2,7 @@
 """
 Classify fighter archetypes from career round stats and write them to the database.
 
-Archetypes: Pressure Striker, Ground Control Specialist, Ground Finisher, All-Around Fighter, Counter Striker
+Archetypes: Pressure Striker, Control Wrestler, Ground Finisher, All-Around Fighter, Counter Striker
 
 Usage:
     python python/classify_archetypes.py

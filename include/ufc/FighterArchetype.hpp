@@ -12,16 +12,16 @@ namespace ufc {
 
 /// Fighting style bucket derived from career round stats.
 ///
-/// | Archetype                 | Profile |
-/// |---------------------------|---------|
-/// | Pressure Striker          | Works at range; high distance striking, limited grappling |
-/// | Ground Control Specialist | Ground-control-first; racks up top control time, not a submission hunter |
-/// | Ground Finisher           | Submission threat, extended control, ground offense |
-/// | All-Around Fighter        | High pace — volume striking combined with wrestling/clinch pressure |
-/// | Counter Striker           | Defensive striking — strong defense, lower absorbed volume |
+/// | Archetype          | Profile |
+/// |--------------------|---------|
+/// | Pressure Striker   | Works at range; high distance striking, limited grappling |
+/// | Control Wrestler   | Ground-control-first; racks up top control time, not a submission hunter |
+/// | Ground Finisher    | Submission threat, extended control, ground offense |
+/// | All-Around Fighter | Mixes striking with wrestling/clinch pressure |
+/// | Counter Striker    | Defensive striking — strong defense, lower absorbed volume |
 enum class FighterArchetype {
     PressureStriker,
-    GroundControlSpecialist,
+    ControlWrestler,
     GroundFinisher,
     AllAroundFighter,
     CounterStriker,
