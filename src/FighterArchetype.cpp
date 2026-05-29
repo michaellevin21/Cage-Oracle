@@ -35,8 +35,11 @@ constexpr double kGroundFinisherSoftMinSubAttemptsPerRound = 0.06;
 constexpr double kGroundFinisherSoftMinGroundStrikeRatio = 0.24;
 constexpr double kGroundFinisherMinGroundStrikeRatio = 0.22;
 constexpr double kGroundFinisherMinGroundStrikesPerRound = 4.0;
-// Striking branch: GF via subs or ground-and-pound; both require real TD volume (excludes pure strikers).
-constexpr double kGroundFinisherStrikingMinTakedownsLandedPerRound = 0.50;
+// Striking branch: moderate sub and GnP paths use separate TD bars.
+constexpr double kGroundFinisherStrikingModerateSubMinTakedownsLandedPerRound = 0.45;
+constexpr double kGroundFinisherStrikingGnpMinTakedownsLandedPerRound = 0.50;
+// GnP path: exclude distance-heavy strikers (e.g. Zhang Weili) even with strong ground offense.
+constexpr double kGroundFinisherStrikingGnpMaxDistanceStrikesPerRound = 12.5;
 // Sub path on striking branch: cap output so high-volume strikers (e.g. Topuria) stay All-Around.
 constexpr double kGroundFinisherStrikingSubPathMaxSigStrikesPerRound = 20.0;
 constexpr double kGroundFinisherMinGroundControlPerRound = 45.0;
@@ -100,15 +103,17 @@ bool qualifiesAsGroundFinisherStriking(double sub_per_round,
                                        double ground_ratio,
                                        double ground_strikes_per_round,
                                        double td_landed_per_round,
-                                       double sig_per_round) {
-    if (td_landed_per_round < kGroundFinisherStrikingMinTakedownsLandedPerRound) {
-        return false;
-    }
+                                       double sig_per_round,
+                                       double distance_strikes_per_round) {
     const bool submission_threat =
+        td_landed_per_round >= kGroundFinisherStrikingModerateSubMinTakedownsLandedPerRound &&
         sub_per_round >= kGroundFinisherMinSubAttemptsPerRound &&
         sig_per_round <= kGroundFinisherStrikingSubPathMaxSigStrikesPerRound;
-    const bool ground_and_pound = ground_ratio >= kGroundFinisherMinGroundStrikeRatio &&
-                                  ground_strikes_per_round >= kGroundFinisherMinGroundStrikesPerRound;
+    const bool ground_and_pound =
+        td_landed_per_round >= kGroundFinisherStrikingGnpMinTakedownsLandedPerRound &&
+        distance_strikes_per_round <= kGroundFinisherStrikingGnpMaxDistanceStrikesPerRound &&
+        ground_ratio >= kGroundFinisherMinGroundStrikeRatio &&
+        ground_strikes_per_round >= kGroundFinisherMinGroundStrikesPerRound;
     return submission_threat || ground_and_pound;
 }
 
@@ -212,7 +217,8 @@ std::optional<FighterArchetype> classifyArchetype(const FighterCareerStats& stat
         distance_strikes_per_round > 0.0 ? control_per_round / distance_strikes_per_round
                                          : control_per_round;
     if (qualifiesAsGroundFinisherStriking(sub_per_round, ground_ratio, ground_strikes_per_round,
-                                          td_landed_per_round, sig_per_round)) {
+                                          td_landed_per_round, sig_per_round,
+                                          distance_strikes_per_round)) {
         return FighterArchetype::GroundFinisher;
     }
     if (control_per_round >= kControlWrestlerStrikingMinControlPerRound &&
