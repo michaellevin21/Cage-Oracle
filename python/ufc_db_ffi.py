@@ -5,8 +5,34 @@ from __future__ import annotations
 import json
 import os
 import sys
-from ctypes import CDLL, c_char_p, c_longlong, c_void_p, string_at
+from ctypes import CDLL, Structure, byref, c_char_p, c_double, c_int, c_longlong, c_void_p, string_at
 from pathlib import Path
+
+
+class UfcCareerTotals(Structure):
+    _fields_ = [
+        ("rounds", c_int),
+        ("sig_strikes_landed", c_int),
+        ("sig_strikes_attempted", c_int),
+        ("total_strikes_landed", c_int),
+        ("total_strikes_attempted", c_int),
+        ("takedowns_landed", c_int),
+        ("takedowns_attempted", c_int),
+        ("opponent_sig_strikes_landed", c_int),
+        ("opponent_sig_strikes_attempted", c_int),
+        ("opponent_takedowns_landed", c_int),
+        ("opponent_takedowns_attempted", c_int),
+        ("sub_attempts", c_int),
+        ("reversals", c_int),
+        ("knockdowns", c_int),
+        ("control_time_seconds", c_double),
+        ("head_strikes_landed", c_int),
+        ("body_strikes_landed", c_int),
+        ("leg_strikes_landed", c_int),
+        ("distance_strikes_landed", c_int),
+        ("clinch_strikes_landed", c_int),
+        ("ground_strikes_landed", c_int),
+    ]
 
 
 def _default_library_name() -> str:
@@ -72,6 +98,8 @@ class UfcDb:
         lib.ufc_get_matchup_by_ids.argtypes = [c_void_p, c_longlong, c_longlong]
         lib.ufc_classify_archetype_by_fighter_id.restype = c_void_p
         lib.ufc_classify_archetype_by_fighter_id.argtypes = [c_void_p, c_longlong]
+        lib.ufc_classify_archetype_from_totals.restype = c_void_p
+        lib.ufc_classify_archetype_from_totals.argtypes = [c_void_p]
 
     def last_error(self) -> str:
         raw = self._lib.ufc_last_error()
@@ -113,6 +141,15 @@ class UfcDb:
 
     def classify_archetype_by_fighter_id(self, fighter_id: int) -> str | None:
         ptr = self._lib.ufc_classify_archetype_by_fighter_id(self._handle, fighter_id)
+        if not ptr:
+            return None
+        try:
+            return string_at(ptr).decode("utf-8")
+        finally:
+            self._lib.ufc_free_string(ptr)
+
+    def classify_archetype_from_totals(self, totals: UfcCareerTotals) -> str | None:
+        ptr = self._lib.ufc_classify_archetype_from_totals(byref(totals))
         if not ptr:
             return None
         try:

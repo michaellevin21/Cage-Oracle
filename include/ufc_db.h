@@ -66,6 +66,34 @@ UFC_DB_API char* ufc_get_matchup_by_names(
 /* Archetype classification (career round stats) */
 UFC_DB_API char* ufc_classify_archetype_by_fighter_id(UfcDb* db, long long fighter_id);
 
+/// Aggregated round-stats totals for point-in-time archetype classification.
+typedef struct UfcCareerTotals {
+    int rounds;
+    int sig_strikes_landed;
+    int sig_strikes_attempted;
+    int total_strikes_landed;
+    int total_strikes_attempted;
+    int takedowns_landed;
+    int takedowns_attempted;
+    int opponent_sig_strikes_landed;
+    int opponent_sig_strikes_attempted;
+    int opponent_takedowns_landed;
+    int opponent_takedowns_attempted;
+    int sub_attempts;
+    int reversals;
+    int knockdowns;
+    double control_time_seconds;
+    int head_strikes_landed;
+    int body_strikes_landed;
+    int leg_strikes_landed;
+    int distance_strikes_landed;
+    int clinch_strikes_landed;
+    int ground_strikes_landed;
+} UfcCareerTotals;
+
+/// Classify from in-memory totals (e.g. career stats accumulated before a fight).
+UFC_DB_API char* ufc_classify_archetype_from_totals(const UfcCareerTotals* totals);
+
 #ifdef __cplusplus
 }
 #endif

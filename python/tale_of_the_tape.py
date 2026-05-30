@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 PROFILE_METRICS = (
+    "age",
     "height_cm",
     "reach_cm",
     "momentum_score",
@@ -14,6 +16,7 @@ PROFILE_METRICS = (
 )
 
 METRIC_LABELS: dict[str, str] = {
+    "age": "Age",
     "height_cm": "Height (cm)",
     "reach_cm": "Reach (cm)",
     "momentum_score": "Momentum",
@@ -46,6 +49,36 @@ def _label(metric: str) -> str:
     return METRIC_LABELS.get(metric, metric.replace("_", " ").title())
 
 
+def _age_from_dob(date_of_birth: Any) -> int | None:
+    if date_of_birth is None:
+        return None
+    born = datetime.fromtimestamp(int(date_of_birth), tz=timezone.utc)
+    today = datetime.now(timezone.utc)
+    age = today.year - born.year
+    if (today.month, today.day) < (born.month, born.day):
+        age -= 1
+    return age
+
+
+def _age_comparison_row(fighter_a: dict[str, Any], fighter_b: dict[str, Any]) -> dict[str, Any]:
+    age_a = _age_from_dob(fighter_a.get("date_of_birth"))
+    age_b = _age_from_dob(fighter_b.get("date_of_birth"))
+    row: dict[str, Any] = {
+        "metric": "age",
+        "fighter_a": age_a,
+        "fighter_b": age_b,
+    }
+    if age_a is not None and age_b is not None:
+        row["delta"] = age_a - age_b
+        if age_a == age_b:
+            row["advantage"] = "tie"
+        elif age_a < age_b:
+            row["advantage"] = "fighter_a"
+        else:
+            row["advantage"] = "fighter_b"
+    return row
+
+
 def _format_value(metric: str, row: dict[str, Any], side: str) -> str:
     label_key = f"{side}_label"
     if row.get(label_key) is not None:
@@ -63,6 +96,9 @@ def _format_value(metric: str, row: dict[str, Any], side: str) -> str:
         minutes = int(total // 60)
         seconds = int(round(total % 60))
         return f"{minutes}:{seconds:02d}"
+
+    if metric == "age":
+        return str(int(value))
 
     if metric in ("height_cm", "reach_cm", "career_rounds"):
         return str(int(round(float(value))))
@@ -96,6 +132,9 @@ def render_matchup(matchup: dict[str, Any], *, width: int = 78) -> str:
     name_a = fighter_a["name"]
     name_b = fighter_b["name"]
     by_metric = _comparisons_by_metric(matchup)
+    age_row = _age_comparison_row(fighter_a, fighter_b)
+    if age_row["fighter_a"] is not None or age_row["fighter_b"] is not None:
+        by_metric["age"] = age_row
 
     col_name = 30
     col_val = 16
@@ -156,6 +195,18 @@ def render_matchup(matchup: dict[str, Any], *, width: int = 78) -> str:
         m for m in by_metric if m not in PROFILE_METRICS
     )
     section("CAREER (per-round & accuracy)", career_metrics)
+
+    history = matchup.get("archetype_history")
+    if history:
+        summaries = history.get("summaries")
+        if not summaries and history.get("summary"):
+            summaries = [history["summary"]]
+        if summaries:
+            lines.append("HISTORICAL STYLE MATCHUP")
+            rule()
+            for line in summaries:
+                lines.append(line)
+            lines.append("")
 
     lines.append("Edge: > favors left fighter, < favors right, = even".center(width))
     return "\n".join(lines)

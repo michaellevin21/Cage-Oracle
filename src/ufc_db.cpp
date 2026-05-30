@@ -260,4 +260,38 @@ char* ufc_classify_archetype_by_fighter_id(UfcDb* db, long long fighter_id) {
     return archetype ? duplicateString(ufc::toString(*archetype)) : nullptr;
 }
 
+char* ufc_classify_archetype_from_totals(const UfcCareerTotals* totals) {
+    g_last_error.clear();
+    if (!totals) {
+        g_last_error = "totals is null";
+        return nullptr;
+    }
+
+    ufc::FighterCareerStats stats;
+    stats.rounds = totals->rounds;
+    stats.sig_strikes_landed = totals->sig_strikes_landed;
+    stats.sig_strikes_attempted = totals->sig_strikes_attempted;
+    stats.total_strikes_landed = totals->total_strikes_landed;
+    stats.total_strikes_attempted = totals->total_strikes_attempted;
+    stats.takedowns_landed = totals->takedowns_landed;
+    stats.takedowns_attempted = totals->takedowns_attempted;
+    stats.opponent_sig_strikes_landed = totals->opponent_sig_strikes_landed;
+    stats.opponent_sig_strikes_attempted = totals->opponent_sig_strikes_attempted;
+    stats.opponent_takedowns_landed = totals->opponent_takedowns_landed;
+    stats.opponent_takedowns_attempted = totals->opponent_takedowns_attempted;
+    stats.sub_attempts = totals->sub_attempts;
+    stats.reversals = totals->reversals;
+    stats.knockdowns = totals->knockdowns;
+    stats.control_time_seconds = totals->control_time_seconds;
+    stats.head_strikes_landed = totals->head_strikes_landed;
+    stats.body_strikes_landed = totals->body_strikes_landed;
+    stats.leg_strikes_landed = totals->leg_strikes_landed;
+    stats.distance_strikes_landed = totals->distance_strikes_landed;
+    stats.clinch_strikes_landed = totals->clinch_strikes_landed;
+    stats.ground_strikes_landed = totals->ground_strikes_landed;
+
+    const std::optional<ufc::FighterArchetype> archetype = ufc::classifyArchetype(stats);
+    return archetype ? duplicateString(ufc::toString(*archetype)) : nullptr;
+}
+
 }  // extern "C"
