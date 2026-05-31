@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import sqlite3
 import re
 import time
@@ -33,8 +34,73 @@ from bs4 import BeautifulSoup
 BASE_URL    = "http://ufcstats.com"
 EVENTS_COMPLETED_URL = f"{BASE_URL}/statistics/events/completed?page=all"
 DB_PATH     = "ufc.db"
-HEADERS     = {"User-Agent": "UFC-Matchup-Analyzer/0.1 (personal project)"}
+HEADERS     = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+}
 DELAY       = 1.5  # seconds between requests — be polite to the server
+
+_ufcstats_session: requests.Session | None = None
+
+
+def _get_ufcstats_session() -> requests.Session:
+    global _ufcstats_session
+    if _ufcstats_session is None:
+        _ufcstats_session = requests.Session()
+    return _ufcstats_session
+
+
+def _is_ufcstats_challenge(html: str) -> bool:
+    return "Checking your browser" in html or 'var nonce="' in html
+
+
+def _extract_ufcstats_challenge(html: str) -> tuple[str, int] | None:
+    nonce_match = re.search(r'var nonce="([^"]+)"', html)
+    if not nonce_match:
+        return None
+    zeros_match = re.search(r"new Array\((\d+)\+1\)\.join\('0'\)", html)
+    zeros = int(zeros_match.group(1)) if zeros_match else 2
+    return nonce_match.group(1), zeros
+
+
+def _solve_ufcstats_pow(nonce: str, zeros: int) -> int:
+    target = "0" * zeros
+    n = 0
+    while True:
+        digest = hashlib.sha256(f"{nonce}:{n}".encode()).hexdigest()
+        if digest.startswith(target):
+            return n
+        n += 1
+
+
+def _fetch_ufcstats_html(url: str) -> str:
+    """GET a ufcstats.com page, solving the JS proof-of-work gate when present."""
+    session = _get_ufcstats_session()
+    response = session.get(url, headers=HEADERS, timeout=15)
+    response.raise_for_status()
+    if not _is_ufcstats_challenge(response.text):
+        return response.text
+
+    challenge = _extract_ufcstats_challenge(response.text)
+    if challenge is None:
+        raise RuntimeError(f"ufcstats anti-bot page at {url} but could not parse challenge")
+    nonce, zeros = challenge
+    solution = _solve_ufcstats_pow(nonce, zeros)
+    post = session.post(
+        f"{BASE_URL}/__c",
+        data={"nonce": nonce, "n": str(solution)},
+        headers={**HEADERS, "Content-Type": "application/x-www-form-urlencoded"},
+        timeout=15,
+    )
+    post.raise_for_status()
+
+    retry = session.get(url, headers=HEADERS, timeout=15)
+    retry.raise_for_status()
+    if _is_ufcstats_challenge(retry.text):
+        raise RuntimeError(f"ufcstats anti-bot challenge still active after solve ({url})")
+    return retry.text
 
 
 # ─────────────────────────────────────────────────────────────
@@ -103,10 +169,9 @@ UFC_RANKINGS_URL = "https://www.ufc.com/rankings"
 
 def get_page(url: str) -> BeautifulSoup:
     """Fetch a page and return a BeautifulSoup object."""
-    response = requests.get(url, headers=HEADERS, timeout=10)
-    response.raise_for_status()
+    html = _fetch_ufcstats_html(url)
     time.sleep(DELAY)
-    return BeautifulSoup(response.text, "html.parser")
+    return BeautifulSoup(html, "html.parser")
 
 
 def extract_id_from_url(url: str) -> str | None:
