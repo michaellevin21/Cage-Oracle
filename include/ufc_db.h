@@ -94,6 +94,11 @@ typedef struct UfcCareerTotals {
 /// Classify from in-memory totals (e.g. career stats accumulated before a fight).
 UFC_DB_API char* ufc_classify_archetype_from_totals(const UfcCareerTotals* totals);
 
+/* Momentum score (recency-weighted recent performance) */
+UFC_DB_API double ufc_compute_momentum_by_fighter_id(UfcDb* db, long long fighter_id);
+/// Returns 1 when a score was computed, 0 when insufficient fight data or on error.
+UFC_DB_API int ufc_compute_momentum_by_fighter_id_out(UfcDb* db, long long fighter_id, double* out_score);
+
 #ifdef __cplusplus
 }
 #endif

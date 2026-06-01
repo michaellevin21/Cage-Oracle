@@ -840,8 +840,9 @@ def sync_recent_events(conn: sqlite3.Connection, since_days: int = 14) -> None:
 
     if fighters_to_refresh:
         refresh_fighter_archetypes(conn, fighters_to_refresh)
+        refresh_fighter_momentum(conn, fighters_to_refresh)
         conn.commit()
-        print(f"  Recalculated archetypes for {len(fighters_to_refresh)} fighter(s) with new fight data.")
+        print(f"  Recalculated archetypes and momentum for {len(fighters_to_refresh)} fighter(s) with new fight data.")
     else:
         print("  No new fight data; archetypes unchanged.")
 
@@ -899,6 +900,37 @@ def refresh_fighter_archetypes(conn: sqlite3.Connection, fighter_db_ids: set[int
             )
 
 
+def refresh_fighter_momentum(conn: sqlite3.Connection, fighter_db_ids: set[int]) -> None:
+    """Recompute and persist momentum scores for the given internal fighter ids."""
+    if not fighter_db_ids:
+        return
+    store = _get_archetype_store()
+    if not store:
+        return
+    for fighter_id in fighter_db_ids:
+        score = store.compute_momentum_by_fighter_id(fighter_id)
+        if score is None:
+            conn.execute(
+                "UPDATE fighters SET momentum_score = NULL WHERE id = ?",
+                (fighter_id,),
+            )
+        else:
+            conn.execute(
+                "UPDATE fighters SET momentum_score = ? WHERE id = ?",
+                (score, fighter_id),
+            )
+
+
+def refresh_all_fighter_momentum(conn: sqlite3.Connection) -> None:
+    """Recompute and persist momentum scores for all fighters.
+
+    Momentum uses opponent rankings, so it should be refreshed whenever
+    fighter_rankings is updated.
+    """
+    fighter_ids = {int(row[0]) for row in conn.execute("SELECT id FROM fighters")}
+    refresh_fighter_momentum(conn, fighter_ids)
+
+
 def persist_fighter_bundle(
     conn: sqlite3.Connection,
     fighter_id: str,
@@ -951,6 +983,7 @@ def persist_fighter_bundle(
 
     if refresh_archetypes:
         refresh_fighter_archetypes(conn, fighters_to_refresh)
+        refresh_fighter_momentum(conn, fighters_to_refresh)
 
     conn.commit()
     return fighter, len(fights), fighters_to_refresh
@@ -1336,6 +1369,12 @@ def sync_fighter_rankings(conn: sqlite3.Connection) -> tuple[int, int]:
         )
         inserted += 1
     conn.commit()
+
+    # Rankings changes affect momentum via quality-of-opposition. Recompute all
+    # momentum scores so the database stays consistent after a rankings sync.
+    refresh_all_fighter_momentum(conn)
+    conn.commit()
+
     return inserted, skipped
 
 

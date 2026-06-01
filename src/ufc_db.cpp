@@ -3,6 +3,7 @@
 #include "ufc/Fight.hpp"
 #include "ufc/Fighter.hpp"
 #include "ufc/FighterArchetype.hpp"
+#include "ufc/FighterMomentum.hpp"
 #include "ufc/JsonSerialize.hpp"
 #include "ufc/Matchup.hpp"
 #include "ufc/RoundStats.hpp"
@@ -292,6 +293,31 @@ char* ufc_classify_archetype_from_totals(const UfcCareerTotals* totals) {
 
     const std::optional<ufc::FighterArchetype> archetype = ufc::classifyArchetype(stats);
     return archetype ? duplicateString(ufc::toString(*archetype)) : nullptr;
+}
+
+double ufc_compute_momentum_by_fighter_id(UfcDb* db, long long fighter_id) {
+    if (!ensureOpen(db)) {
+        return 0.0;
+    }
+    const std::optional<double> score = ufc::computeMomentumScore(connection(db), fighter_id);
+    return score ? *score : 0.0;
+}
+
+int ufc_compute_momentum_by_fighter_id_out(UfcDb* db, long long fighter_id, double* out_score) {
+    g_last_error.clear();
+    if (!out_score) {
+        g_last_error = "out_score is null";
+        return 0;
+    }
+    if (!ensureOpen(db)) {
+        return 0;
+    }
+    const std::optional<double> score = ufc::computeMomentumScore(connection(db), fighter_id);
+    if (!score) {
+        return 0;
+    }
+    *out_score = *score;
+    return 1;
 }
 
 }  // extern "C"

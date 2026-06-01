@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from ctypes import CDLL, Structure, byref, c_char_p, c_double, c_int, c_longlong, c_void_p, string_at
+from ctypes import CDLL, POINTER, Structure, byref, c_char_p, c_double, c_int, c_longlong, c_void_p, string_at
 from pathlib import Path
 
 
@@ -100,6 +100,12 @@ class UfcDb:
         lib.ufc_classify_archetype_by_fighter_id.argtypes = [c_void_p, c_longlong]
         lib.ufc_classify_archetype_from_totals.restype = c_void_p
         lib.ufc_classify_archetype_from_totals.argtypes = [c_void_p]
+        lib.ufc_compute_momentum_by_fighter_id_out.argtypes = [
+            c_void_p,
+            c_longlong,
+            POINTER(c_double),
+        ]
+        lib.ufc_compute_momentum_by_fighter_id_out.restype = c_int
 
     def last_error(self) -> str:
         raw = self._lib.ufc_last_error()
@@ -156,6 +162,15 @@ class UfcDb:
             return string_at(ptr).decode("utf-8")
         finally:
             self._lib.ufc_free_string(ptr)
+
+    def compute_momentum_by_fighter_id(self, fighter_id: int) -> float | None:
+        score = c_double()
+        ok = self._lib.ufc_compute_momentum_by_fighter_id_out(
+            self._handle, fighter_id, byref(score)
+        )
+        if not ok:
+            return None
+        return float(score.value)
 
     def close(self) -> None:
         if self._handle:
