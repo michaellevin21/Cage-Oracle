@@ -18,7 +18,7 @@ _ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(_ROOT / "python"))
 
 from archetype_matchup_history import attach_archetype_history, get_archetype_index  # noqa: E402
-from tale_of_the_tape import render_matchup  # noqa: E402
+from tale_of_the_tape import render_matchup, render_matchup_history  # noqa: E402
 from ufc_db_ffi import UfcDb  # noqa: E402
 
 
@@ -105,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
             matchup = db.get_matchup_by_names(name_a, name_b)
             index = get_archetype_index(args.db, lib_path=args.lib)
             attach_archetype_history(matchup, index)
+            similar_matchups = db.find_similar_matchups_by_names(name_a, name_b, top_k=5)
     except FileNotFoundError as exc:
         print(exc, file=sys.stderr)
         return 1
@@ -116,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(render_matchup(matchup))
+    print(render_matchup_history(similar_matchups), end="")
     return 0
 
 

@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+struct sqlite3;
+
 namespace ufc {
 
 class Fighter;
@@ -12,6 +14,7 @@ class Fight;
 class RoundStats;
 struct StatComparison;
 class Matchup;
+struct SimilarMatchupResults;
 
 namespace json {
 
@@ -28,6 +31,8 @@ std::string toJson(const Matchup& matchup);
 
 std::string toJsonArray(const std::vector<Fight>& fights);
 std::string toJsonArray(const std::vector<RoundStats>& stats);
+
+std::string toJsonSimilarMatchups(sqlite3* db, int64_t fighter_a_id, int64_t fighter_b_id, const SimilarMatchupResults& results);
 
 }  // namespace json
 }  // namespace ufc

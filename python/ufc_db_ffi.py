@@ -107,6 +107,14 @@ class UfcDb:
         ]
         lib.ufc_compute_momentum_by_fighter_id_out.restype = c_int
 
+        for name, argtypes in (
+            ("ufc_find_similar_matchups", [c_void_p, c_longlong, c_longlong, c_int]),
+            ("ufc_find_similar_matchups_by_names", [c_void_p, c_char_p, c_char_p, c_int]),
+        ):
+            fn = getattr(lib, name)
+            fn.restype = c_void_p
+            fn.argtypes = argtypes
+
     def last_error(self) -> str:
         raw = self._lib.ufc_last_error()
         return raw.decode("utf-8") if raw else ""
@@ -171,6 +179,35 @@ class UfcDb:
         if not ok:
             return None
         return float(score.value)
+
+    def find_similar_matchups(
+        self, fighter_a_id: int, fighter_b_id: int, top_k: int = 5
+    ) -> dict:
+        ptr = self._lib.ufc_find_similar_matchups(
+            self._handle, fighter_a_id, fighter_b_id, top_k
+        )
+        if not ptr:
+            raise LookupError(self.last_error() or "similar matchups lookup failed")
+        data = self._take_json(ptr)
+        if data is None:
+            raise LookupError(self.last_error() or "similar matchups lookup failed")
+        return data
+
+    def find_similar_matchups_by_names(
+        self, fighter_a_name: str, fighter_b_name: str, top_k: int = 5
+    ) -> dict:
+        ptr = self._lib.ufc_find_similar_matchups_by_names(
+            self._handle,
+            fighter_a_name.encode("utf-8"),
+            fighter_b_name.encode("utf-8"),
+            top_k,
+        )
+        if not ptr:
+            raise LookupError(self.last_error() or "similar matchups lookup failed")
+        data = self._take_json(ptr)
+        if data is None:
+            raise LookupError(self.last_error() or "similar matchups lookup failed")
+        return data
 
     def close(self) -> None:
         if self._handle:

@@ -7,6 +7,7 @@
 #include "ufc/JsonSerialize.hpp"
 #include "ufc/Matchup.hpp"
 #include "ufc/RoundStats.hpp"
+#include "ufc/SimilaritySearch.hpp"
 #include "ufc/UfcDatabase.hpp"
 
 #include <cstdlib>
@@ -318,6 +319,45 @@ int ufc_compute_momentum_by_fighter_id_out(UfcDb* db, long long fighter_id, doub
     }
     *out_score = *score;
     return 1;
+}
+
+char* ufc_find_similar_matchups(UfcDb* db, long long fighter_a_id, long long fighter_b_id, int top_k) {
+    if (!ensureOpen(db)) {
+        return nullptr;
+    }
+    if (!ufc::Fighter::getById(connection(db), fighter_a_id)) {
+        g_last_error = "fighter_a not found";
+        return nullptr;
+    }
+    if (!ufc::Fighter::getById(connection(db), fighter_b_id)) {
+        g_last_error = "fighter_b not found";
+        return nullptr;
+    }
+    const int k = top_k > 0 ? top_k : 5;
+    const ufc::SimilarMatchupResults results =
+        ufc::findSimilarHistoricalMatchups(connection(db), fighter_a_id, fighter_b_id, k);
+    return duplicateJson(
+        ufc::json::toJsonSimilarMatchups(connection(db), fighter_a_id, fighter_b_id, results));
+}
+
+char* ufc_find_similar_matchups_by_names(UfcDb* db, const char* fighter_a_name, const char* fighter_b_name, int top_k) {
+    if (!ensureOpen(db) || !fighter_a_name || !fighter_b_name) {
+        if (!fighter_a_name || !fighter_b_name) {
+            g_last_error = "fighter name is null";
+        }
+        return nullptr;
+    }
+    const std::optional<ufc::Fighter> a = ufc::Fighter::getByName(connection(db), fighter_a_name);
+    if (!a) {
+        g_last_error = std::string("fighter not found: ") + fighter_a_name;
+        return nullptr;
+    }
+    const std::optional<ufc::Fighter> b = ufc::Fighter::getByName(connection(db), fighter_b_name);
+    if (!b) {
+        g_last_error = std::string("fighter not found: ") + fighter_b_name;
+        return nullptr;
+    }
+    return ufc_find_similar_matchups(db, a->id, b->id, top_k);
 }
 
 }  // extern "C"

@@ -10,6 +10,10 @@ set(UFC_DB_SOURCES
     src/Fighter.cpp
     src/FighterCareerStats.cpp
     src/FighterArchetype.cpp
+    src/FighterMomentum.cpp
+    src/FighterAttributes.cpp
+    src/PrefightCareer.cpp
+    src/SimilaritySearch.cpp
     src/Fight.cpp
     src/RoundStats.cpp
     src/Matchup.cpp

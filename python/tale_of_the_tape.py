@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -210,3 +211,65 @@ def render_matchup(matchup: dict[str, Any], *, width: int = 78) -> str:
 
     lines.append("Edge: > favors left fighter, < favors right, = even".center(width))
     return "\n".join(lines)
+
+
+def _bold(text: str) -> str:
+    if sys.stdout.isatty():
+        return f"\033[1m{text}\033[0m"
+    return f"**{text}**"
+
+
+def _matchup_fighter_label(name: str, fighter_id: int | None, hit: dict[str, Any]) -> str:
+    winner_id = hit.get("winner_id")
+    if winner_id and fighter_id is not None and int(winner_id) == int(fighter_id):
+        return _bold(name)
+    return name
+
+
+def _format_matchup_line(hit: dict[str, Any], *, rank: int, show_similarity: bool) -> str:
+    f1 = _matchup_fighter_label(
+        hit.get("fighter1_name") or f"id {hit.get('fighter1_id')}",
+        hit.get("fighter1_id"),
+        hit,
+    )
+    f2 = _matchup_fighter_label(
+        hit.get("fighter2_name") or f"id {hit.get('fighter2_id')}",
+        hit.get("fighter2_id"),
+        hit,
+    )
+    event = hit.get("event_name") or ""
+    line = f"{rank}. {f1} vs {f2}"
+    if event:
+        line += f" @ {event}"
+    if show_similarity:
+        sim = hit.get("similarity")
+        sim_text = f"{100.0 * sim:.1f}%" if isinstance(sim, (int, float)) else "?"
+        line += f"  ({sim_text} similarity)"
+    return line
+
+
+def render_prior_meetings(result: dict[str, Any]) -> str:
+    hits = result.get("prior_meetings") or []
+    if not hits:
+        return ""
+    lines = ["Previous meetings", "-" * 17]
+    for rank, hit in enumerate(hits, start=1):
+        lines.append(_format_matchup_line(hit, rank=rank, show_similarity=True))
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_similar_matchups(result: dict[str, Any]) -> str:
+    hits = result.get("similar_matchups") or []
+    if not hits:
+        return ""
+    lines = ["Comparable historical matchups (based off pre-fight career stats and physical attributes)", "-" * 30]
+    for rank, hit in enumerate(hits, start=1):
+        lines.append(_format_matchup_line(hit, rank=rank, show_similarity=True))
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_matchup_history(result: dict[str, Any]) -> str:
+    parts = [render_prior_meetings(result), render_similar_matchups(result)]
+    return "".join(part for part in parts if part)

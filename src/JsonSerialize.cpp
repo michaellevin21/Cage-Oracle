@@ -4,6 +4,7 @@
 #include "ufc/Fighter.hpp"
 #include "ufc/Matchup.hpp"
 #include "ufc/RoundStats.hpp"
+#include "ufc/SimilaritySearch.hpp"
 
 #include <sstream>
 #include <iomanip>
@@ -182,6 +183,57 @@ std::string toJsonArray(const std::vector<RoundStats>& stats) {
         oss << toJson(stats[i]);
     }
     oss << ']';
+    return oss.str();
+}
+
+std::string toJsonSimilarMatchups(sqlite3* db, int64_t fighter_a_id, int64_t fighter_b_id, const SimilarMatchupResults& results) {
+    auto writeHit = [&](std::ostringstream& oss, const SimilarMatchupHit& hit, bool include_similarity) {
+        std::string fighter1_name;
+        std::string fighter2_name;
+        if (db) {
+            if (const std::optional<Fighter> f1 = Fighter::getById(db, hit.fighter1_id)) {
+                fighter1_name = f1->name;
+            }
+            if (const std::optional<Fighter> f2 = Fighter::getById(db, hit.fighter2_id)) {
+                fighter2_name = f2->name;
+            }
+        }
+        oss << '{'
+            << "\"fight_id\":" << hit.fight_id << ','
+            << "\"fighter1_id\":" << hit.fighter1_id << ','
+            << "\"fighter2_id\":" << hit.fighter2_id << ','
+            << "\"fighter1_name\":" << quote(fighter1_name) << ','
+            << "\"fighter2_name\":" << quote(fighter2_name) << ','
+            << "\"event_id\":" << hit.event_id << ','
+            << "\"event_name\":" << quote(hit.event_name) << ','
+            << "\"event_date\":" << hit.event_date << ','
+            << "\"winner_id\":" << (hit.winner_id > 0 ? std::to_string(hit.winner_id) : "null");
+        if (include_similarity) {
+            oss << ",\"similarity\":" << hit.similarity;
+        }
+        oss << '}';
+    };
+
+    auto writeArray = [&](const char* key, const std::vector<SimilarMatchupHit>& hits, bool include_similarity) {
+        std::ostringstream section;
+        section << '"' << key << "\":[";
+        for (size_t i = 0; i < hits.size(); ++i) {
+            if (i > 0) {
+                section << ',';
+            }
+            writeHit(section, hits[i], include_similarity);
+        }
+        section << ']';
+        return section.str();
+    };
+
+    std::ostringstream oss;
+    oss << std::setprecision(17);
+    oss << "{\"fighter_a_id\":" << fighter_a_id << ','
+        << "\"fighter_b_id\":" << fighter_b_id << ','
+        << writeArray("prior_meetings", results.prior_meetings, true) << ','
+        << writeArray("similar_matchups", results.similar_matchups, true)
+        << '}';
     return oss.str();
 }
 
