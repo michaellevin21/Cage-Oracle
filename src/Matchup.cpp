@@ -99,6 +99,7 @@ void Matchup::buildProfileComparisons() {
     addNumeric("height_cm", asDouble(fighter_a.height_cm), asDouble(fighter_b.height_cm));
     addNumeric("reach_cm", asDouble(fighter_a.reach_cm), asDouble(fighter_b.reach_cm));
     addNumeric("momentum_score", optionalDouble(fighter_a.momentum_score), optionalDouble(fighter_b.momentum_score));
+    addNumeric("resume_score", optionalDouble(fighter_a.resume_score), optionalDouble(fighter_b.resume_score));
     addCategorical("stance", fighter_a.stance, fighter_b.stance);
     addCategorical("weight_class", std::optional<std::string>(fighter_a.weight_class), std::optional<std::string>(fighter_b.weight_class));
     addCategorical("archetype", fighter_a.archetype, fighter_b.archetype);

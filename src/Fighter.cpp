@@ -10,7 +10,7 @@ namespace {
 
 constexpr const char* kFighterColumns =
     "id, ufc_id, name, stance, reach_cm, height_cm, weight_class, "
-    "date_of_birth, archetype, momentum_score, profile_url, last_updated";
+    "date_of_birth, archetype, momentum_score, resume_score, profile_url, last_updated";
 
 }  // namespace
 
@@ -33,6 +33,7 @@ Fighter Fighter::fromStatement(sqlite3_stmt* stmt) {
     f.date_of_birth = columnInt64Optional(stmt, col++);
     f.archetype = columnTextOptional(stmt, col++);
     f.momentum_score = columnDoubleOptional(stmt, col++);
+    f.resume_score = columnDoubleOptional(stmt, col++);
     f.profile_url = columnText(stmt, col++);
     f.last_updated = columnInt64(stmt, col++);
     return f;

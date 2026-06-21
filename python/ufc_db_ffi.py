@@ -106,10 +106,18 @@ class UfcDb:
             POINTER(c_double),
         ]
         lib.ufc_compute_momentum_by_fighter_id_out.restype = c_int
+        lib.ufc_compute_resume_by_fighter_id_out.argtypes = [
+            c_void_p,
+            c_longlong,
+            POINTER(c_double),
+        ]
+        lib.ufc_compute_resume_by_fighter_id_out.restype = c_int
 
         for name, argtypes in (
             ("ufc_find_similar_matchups", [c_void_p, c_longlong, c_longlong, c_int]),
             ("ufc_find_similar_matchups_by_names", [c_void_p, c_char_p, c_char_p, c_int]),
+            ("ufc_get_fights_by_fighters", [c_void_p, c_longlong, c_longlong]),
+            ("ufc_list_round_stats_for_fight", [c_void_p, c_longlong]),
         ):
             fn = getattr(lib, name)
             fn.restype = c_void_p
@@ -180,6 +188,15 @@ class UfcDb:
             return None
         return float(score.value)
 
+    def compute_resume_by_fighter_id(self, fighter_id: int) -> float:
+        score = c_double()
+        ok = self._lib.ufc_compute_resume_by_fighter_id_out(
+            self._handle, fighter_id, byref(score)
+        )
+        if not ok:
+            raise RuntimeError(self.last_error() or "resume score computation failed")
+        return float(score.value)
+
     def find_similar_matchups(
         self, fighter_a_id: int, fighter_b_id: int, top_k: int = 5
     ) -> dict:
@@ -192,6 +209,24 @@ class UfcDb:
         if data is None:
             raise LookupError(self.last_error() or "similar matchups lookup failed")
         return data
+
+    def get_fights_by_fighters(
+        self, fighter1_id: int, fighter2_id: int
+    ) -> list[dict]:
+        ptr = self._lib.ufc_get_fights_by_fighters(
+            self._handle, fighter1_id, fighter2_id
+        )
+        if not ptr:
+            return []
+        data = self._take_json(ptr)
+        return data if isinstance(data, list) else []
+
+    def list_round_stats_for_fight(self, fight_id: int) -> list[dict]:
+        ptr = self._lib.ufc_list_round_stats_for_fight(self._handle, fight_id)
+        if not ptr:
+            return []
+        data = self._take_json(ptr)
+        return data if isinstance(data, list) else []
 
     def find_similar_matchups_by_names(
         self, fighter_a_name: str, fighter_b_name: str, top_k: int = 5

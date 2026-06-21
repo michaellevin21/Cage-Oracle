@@ -11,6 +11,7 @@ PROFILE_METRICS = (
     "height_cm",
     "reach_cm",
     "momentum_score",
+    "resume_score",
     "stance",
     "weight_class",
     "archetype",
@@ -21,6 +22,7 @@ METRIC_LABELS: dict[str, str] = {
     "height_cm": "Height (cm)",
     "reach_cm": "Reach (cm)",
     "momentum_score": "Momentum",
+    "resume_score": "Resume",
     "stance": "Stance",
     "weight_class": "Weight class",
     "archetype": "Archetype",
@@ -107,20 +109,45 @@ def _format_value(metric: str, row: dict[str, Any], side: str) -> str:
     if metric == "momentum_score":
         return f"{float(value):.2f}"
 
+    if metric == "resume_score":
+        return str(int(round(float(value))))
+
     if isinstance(value, float):
         return f"{value:.2f}"
 
     return str(value)
 
 
-def _edge_marker(advantage: str | None) -> str:
+def _last_name(full_name: str) -> str:
+    parts = full_name.strip().split()
+    return parts[-1] if parts else full_name
+
+
+def _edge_name_label(full_name: str, other_name: str) -> str:
+    last = _last_name(full_name)
+    if _last_name(other_name).casefold() == last.casefold():
+        parts = full_name.strip().split()
+        if parts and parts[0]:
+            return f"{parts[0][0]}. {last}"
+    return last
+
+
+def _edge_marker(
+    advantage: str | None,
+    *,
+    metric: str | None = None,
+    label_a: str = "",
+    label_b: str = "",
+) -> str:
+    if metric == "career_rounds":
+        return "N/A"
     if advantage == "fighter_a":
-        return ">"
+        return label_a
     if advantage == "fighter_b":
-        return "<"
+        return label_b
     if advantage == "tie":
-        return "="
-    return " "
+        return "Even"
+    return ""
 
 
 def _comparisons_by_metric(matchup: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -132,6 +159,8 @@ def render_matchup(matchup: dict[str, Any], *, width: int = 78) -> str:
     fighter_b = matchup["fighter_b"]
     name_a = fighter_a["name"]
     name_b = fighter_b["name"]
+    edge_label_a = _edge_name_label(name_a, name_b)
+    edge_label_b = _edge_name_label(name_b, name_a)
     by_metric = _comparisons_by_metric(matchup)
     age_row = _age_comparison_row(fighter_a, fighter_b)
     if age_row["fighter_a"] is not None or age_row["fighter_b"] is not None:
@@ -140,6 +169,16 @@ def render_matchup(matchup: dict[str, Any], *, width: int = 78) -> str:
     col_name = 30
     col_val = 16
     col_gap = 2
+    col_edge = max(
+        5,
+        len(edge_label_a),
+        len(edge_label_b),
+        len("Even"),
+        len("N/A"),
+    )
+    fixed_width = col_name + col_gap + col_val + col_gap + col_val + col_gap + col_edge
+    if fixed_width > width:
+        col_edge = max(5, col_edge - (fixed_width - width))
     lines: list[str] = []
 
     def rule(char: str = "-") -> None:
@@ -171,7 +210,7 @@ def render_matchup(matchup: dict[str, Any], *, width: int = 78) -> str:
             f"{'Metric':<{col_name}}{gap}"
             f"{short_a:>{col_val}}{gap}"
             f"{short_b:>{col_val}}{gap}"
-            f"{'Edge':>4}"
+            f"{'Edge':>{col_edge}}"
         )
         rule()
 
@@ -179,12 +218,17 @@ def render_matchup(matchup: dict[str, Any], *, width: int = 78) -> str:
             metric = row["metric"]
             val_a = _format_value(metric, row, "fighter_a")
             val_b = _format_value(metric, row, "fighter_b")
-            edge = _edge_marker(row.get("advantage"))
+            edge = _edge_marker(
+                row.get("advantage"),
+                metric=metric,
+                label_a=edge_label_a,
+                label_b=edge_label_b,
+            )
             lines.append(
                 f"{_label(metric):<{col_name}}{gap}"
                 f"{val_a:>{col_val}}{gap}"
                 f"{val_b:>{col_val}}{gap}"
-                f"{edge:>4}"
+                f"{edge:>{col_edge}}"
             )
 
         lines.append("")
@@ -196,6 +240,13 @@ def render_matchup(matchup: dict[str, Any], *, width: int = 78) -> str:
         m for m in by_metric if m not in PROFILE_METRICS
     )
     section("CAREER (per-round & accuracy)", career_metrics)
+
+    lines.append(
+        "Edge: last name of fighter with advantage (Even = tie, N/A = not applicable)".center(
+            width
+        )
+    )
+    lines.append("")
 
     history = matchup.get("archetype_history")
     if history:
@@ -209,7 +260,29 @@ def render_matchup(matchup: dict[str, Any], *, width: int = 78) -> str:
                 lines.append(line)
             lines.append("")
 
-    lines.append("Edge: > favors left fighter, < favors right, = even".center(width))
+    return "\n".join(lines)
+
+
+def render_win_probability(matchup: dict[str, Any], *, width: int = 78) -> str:
+    estimate = matchup.get("win_probability")
+    if not estimate:
+        return ""
+
+    fighter_a = matchup["fighter_a"]
+    fighter_b = matchup["fighter_b"]
+    name_a = fighter_a["name"]
+    name_b = fighter_b["name"]
+    p_a = float(estimate["p_fighter_a"])
+    p_b = float(estimate["p_fighter_b"])
+
+    if abs(p_a - p_b) < 1e-9:
+        line = f"Even matchup ({100.0 * p_a:.1f}%)"
+    elif p_a > p_b:
+        line = f"Predicted winner: {name_a} ({100.0 * p_a:.1f}% certainty)"
+    else:
+        line = f"Predicted winner: {name_b} ({100.0 * p_b:.1f}%)"
+
+    lines = ["", line.center(width), ""]
     return "\n".join(lines)
 
 
@@ -243,7 +316,10 @@ def _format_matchup_line(hit: dict[str, Any], *, rank: int, show_similarity: boo
         line += f" @ {event}"
     if show_similarity:
         sim = hit.get("similarity")
-        sim_text = f"{100.0 * sim:.1f}%" if isinstance(sim, (int, float)) else "?"
+        if isinstance(sim, (int, float)):
+            sim_text = f"{100.0 * max(0.0, float(sim)):.1f}%"
+        else:
+            sim_text = "?"
         line += f"  ({sim_text} similarity)"
     return line
 

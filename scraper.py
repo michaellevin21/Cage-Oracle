@@ -921,6 +921,38 @@ def refresh_fighter_momentum(conn: sqlite3.Connection, fighter_db_ids: set[int])
             )
 
 
+def ensure_resume_score_column(conn: sqlite3.Connection) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(fighters)")}
+    if "resume_score" not in columns:
+        conn.execute("ALTER TABLE fighters ADD COLUMN resume_score REAL")
+
+
+def refresh_fighter_resume(conn: sqlite3.Connection, fighter_db_ids: set[int]) -> None:
+    """Recompute and persist resume scores for the given internal fighter ids."""
+    if not fighter_db_ids:
+        return
+    store = _get_archetype_store()
+    if not store:
+        return
+    ensure_resume_score_column(conn)
+    for fighter_id in fighter_db_ids:
+        score = store.compute_resume_by_fighter_id(fighter_id)
+        conn.execute(
+            "UPDATE fighters SET resume_score = ? WHERE id = ?",
+            (score, fighter_id),
+        )
+
+
+def refresh_all_fighter_resume(conn: sqlite3.Connection) -> None:
+    """Recompute and persist resume scores for all fighters.
+
+    Resume uses current opponent rankings, so it should be refreshed whenever
+    fighter_rankings is updated or new fight results are ingested.
+    """
+    fighter_ids = {int(row[0]) for row in conn.execute("SELECT id FROM fighters")}
+    refresh_fighter_resume(conn, fighter_ids)
+
+
 def refresh_all_fighter_momentum(conn: sqlite3.Connection) -> None:
     """Recompute and persist momentum scores for all fighters.
 
@@ -984,6 +1016,7 @@ def persist_fighter_bundle(
     if refresh_archetypes:
         refresh_fighter_archetypes(conn, fighters_to_refresh)
         refresh_fighter_momentum(conn, fighters_to_refresh)
+        refresh_fighter_resume(conn, fighters_to_refresh)
 
     conn.commit()
     return fighter, len(fights), fighters_to_refresh
@@ -1373,6 +1406,7 @@ def sync_fighter_rankings(conn: sqlite3.Connection) -> tuple[int, int]:
     # Rankings changes affect momentum via quality-of-opposition. Recompute all
     # momentum scores so the database stays consistent after a rankings sync.
     refresh_all_fighter_momentum(conn)
+    refresh_all_fighter_resume(conn)
     conn.commit()
 
     return inserted, skipped

@@ -23,6 +23,7 @@ public:
     std::optional<int64_t> date_of_birth;  // Unix timestamp
     std::optional<std::string> archetype;
     std::optional<double> momentum_score;
+    std::optional<double> resume_score;
     std::string profile_url;
     int64_t last_updated = 0;  // Unix timestamp
 

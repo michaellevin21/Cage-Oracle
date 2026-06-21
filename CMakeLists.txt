@@ -11,6 +11,7 @@ set(UFC_DB_SOURCES
     src/FighterCareerStats.cpp
     src/FighterArchetype.cpp
     src/FighterMomentum.cpp
+    src/FighterResume.cpp
     src/FighterAttributes.cpp
     src/PrefightCareer.cpp
     src/SimilaritySearch.cpp

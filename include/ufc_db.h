@@ -99,6 +99,11 @@ UFC_DB_API double ufc_compute_momentum_by_fighter_id(UfcDb* db, long long fighte
 /// Returns 1 when a score was computed, 0 when insufficient fight data or on error.
 UFC_DB_API int ufc_compute_momentum_by_fighter_id_out(UfcDb* db, long long fighter_id, double* out_score);
 
+/* Resume score (career wins over currently ranked weight-class opponents) */
+UFC_DB_API double ufc_compute_resume_by_fighter_id(UfcDb* db, long long fighter_id);
+/// Returns 1 on success, 0 on error.
+UFC_DB_API int ufc_compute_resume_by_fighter_id_out(UfcDb* db, long long fighter_id, double* out_score);
+
 /* Cosine similarity (comparable historical matchups) */
 UFC_DB_API char* ufc_find_similar_matchups(
     UfcDb* db, long long fighter_a_id, long long fighter_b_id, int top_k);

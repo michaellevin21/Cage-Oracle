@@ -75,6 +75,7 @@ std::string toJson(const Fighter& f) {
         << "\"date_of_birth\":" << nullOrInt64(f.date_of_birth) << ','
         << "\"archetype\":" << nullOrString(f.archetype) << ','
         << "\"momentum_score\":" << nullOrDouble(f.momentum_score) << ','
+        << "\"resume_score\":" << nullOrDouble(f.resume_score) << ','
         << "\"profile_url\":" << quote(f.profile_url) << ','
         << "\"last_updated\":" << f.last_updated
         << '}';

@@ -4,6 +4,7 @@
 #include "ufc/Fighter.hpp"
 #include "ufc/FighterArchetype.hpp"
 #include "ufc/FighterMomentum.hpp"
+#include "ufc/FighterResume.hpp"
 #include "ufc/JsonSerialize.hpp"
 #include "ufc/Matchup.hpp"
 #include "ufc/RoundStats.hpp"
@@ -318,6 +319,26 @@ int ufc_compute_momentum_by_fighter_id_out(UfcDb* db, long long fighter_id, doub
         return 0;
     }
     *out_score = *score;
+    return 1;
+}
+
+double ufc_compute_resume_by_fighter_id(UfcDb* db, long long fighter_id) {
+    if (!ensureOpen(db)) {
+        return 0.0;
+    }
+    return ufc::computeResumeScore(connection(db), fighter_id);
+}
+
+int ufc_compute_resume_by_fighter_id_out(UfcDb* db, long long fighter_id, double* out_score) {
+    g_last_error.clear();
+    if (!out_score) {
+        g_last_error = "out_score is null";
+        return 0;
+    }
+    if (!ensureOpen(db)) {
+        return 0;
+    }
+    *out_score = ufc::computeResumeScore(connection(db), fighter_id);
     return 1;
 }
 
