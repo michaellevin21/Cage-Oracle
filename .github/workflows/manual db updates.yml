@@ -29,4 +29,5 @@ jobs:
         run: python scraper.py --rankings-only
       - name: Commit and push DB changes
         run: |
-          git config user.name
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
