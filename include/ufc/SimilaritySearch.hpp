@@ -33,6 +33,10 @@ AttributeNormalization fitNormalization(const std::vector<std::vector<double>>& 
 std::vector<double> normalizeVector(const std::vector<double>& raw, const AttributeNormalization& params);
 double cosineSimilarity(const std::vector<double>& a, const std::vector<double>& b);
 
-SimilarMatchupResults findSimilarHistoricalMatchups(sqlite3* db, int64_t fighter_a_id, int64_t fighter_b_id, int top_k = 5);
+SimilarMatchupResults findSimilarHistoricalMatchups(
+    sqlite3* db,
+    int64_t fighter_a_id,
+    int64_t fighter_b_id,
+    double min_similarity = 0.50);
 
 }  // namespace ufc

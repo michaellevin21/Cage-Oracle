@@ -16,7 +16,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "python"))
 
 from tale_of_the_tape import render_matchup_history  # noqa: E402
-from ufc_db_ffi import UfcDb  # noqa: E402
+from ufc_db_ffi import DEFAULT_MIN_SIMILARITY, UfcDb  # noqa: E402
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -31,7 +31,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--db", type=Path, default=_ROOT / "ufc.db", help="SQLite database path")
     parser.add_argument("--lib", type=Path, default=None, help="Path to ufc_db shared library")
-    parser.add_argument("--top", type=int, default=5, help="Number of results (default: 5)")
+    parser.add_argument(
+        "--min-similarity",
+        type=float,
+        default=DEFAULT_MIN_SIMILARITY,
+        help="Minimum cosine similarity (default: 0.50).",
+    )
     return parser.parse_args(argv)
 
 
@@ -50,7 +55,9 @@ def main(argv: list[str] | None = None) -> int:
             if not db.get_fighter_by_name(name_b):
                 print(f"Fighter not found: {name_b}", file=sys.stderr)
                 return 1
-            result = db.find_similar_matchups_by_names(name_a, name_b, top_k=args.top)
+            result = db.find_similar_matchups_by_names(
+                name_a, name_b, min_similarity=args.min_similarity
+            )
             print(render_matchup_history(result), end="")
     except FileNotFoundError as exc:
         print(exc, file=sys.stderr)

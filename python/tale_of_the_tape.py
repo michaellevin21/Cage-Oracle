@@ -132,15 +132,27 @@ def _edge_name_label(full_name: str, other_name: str) -> str:
     return last
 
 
+def _values_tied_for_display(metric: str, row: dict[str, Any]) -> bool:
+    """True when both sides format to the same displayed value."""
+    val_a = _format_value(metric, row, "fighter_a")
+    val_b = _format_value(metric, row, "fighter_b")
+    if val_a == "-" or val_b == "-":
+        return False
+    return val_a == val_b
+
+
 def _edge_marker(
     advantage: str | None,
     *,
     metric: str | None = None,
+    row: dict[str, Any] | None = None,
     label_a: str = "",
     label_b: str = "",
 ) -> str:
     if metric == "career_rounds":
         return "N/A"
+    if metric and row is not None and _values_tied_for_display(metric, row):
+        return "Even"
     if advantage == "fighter_a":
         return label_a
     if advantage == "fighter_b":
@@ -221,6 +233,7 @@ def render_matchup(matchup: dict[str, Any], *, width: int = 78) -> str:
             edge = _edge_marker(
                 row.get("advantage"),
                 metric=metric,
+                row=row,
                 label_a=edge_label_a,
                 label_b=edge_label_b,
             )
@@ -299,6 +312,16 @@ def _matchup_fighter_label(name: str, fighter_id: int | None, hit: dict[str, Any
     return name
 
 
+def _format_event_date(hit: dict[str, Any]) -> str | None:
+    event_date = hit.get("event_date")
+    if event_date is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(event_date), tz=timezone.utc).strftime("%Y-%m-%d")
+    except (TypeError, ValueError, OSError):
+        return None
+
+
 def _format_matchup_line(hit: dict[str, Any], *, rank: int, show_similarity: bool) -> str:
     f1 = _matchup_fighter_label(
         hit.get("fighter1_name") or f"id {hit.get('fighter1_id')}",
@@ -311,7 +334,10 @@ def _format_matchup_line(hit: dict[str, Any], *, rank: int, show_similarity: boo
         hit,
     )
     event = hit.get("event_name") or ""
+    date_text = _format_event_date(hit)
     line = f"{rank}. {f1} vs {f2}"
+    if date_text:
+        line += f" ({date_text})"
     if event:
         line += f" @ {event}"
     if show_similarity:
@@ -330,7 +356,7 @@ def render_prior_meetings(result: dict[str, Any]) -> str:
         return ""
     lines = ["Previous meetings", "-" * 17]
     for rank, hit in enumerate(hits, start=1):
-        lines.append(_format_matchup_line(hit, rank=rank, show_similarity=True))
+        lines.append(_format_matchup_line(hit, rank=rank, show_similarity=False))
     lines.append("")
     return "\n".join(lines)
 
@@ -338,7 +364,7 @@ def render_prior_meetings(result: dict[str, Any]) -> str:
 def render_similar_matchups(result: dict[str, Any]) -> str:
     hits = result.get("similar_matchups") or []
     if not hits:
-        return ""
+        return "There are no similar historical fights for this matchup.\n"
     lines = ["Comparable historical matchups (based off pre-fight career stats and physical attributes)", "-" * 30]
     for rank, hit in enumerate(hits, start=1):
         lines.append(_format_matchup_line(hit, rank=rank, show_similarity=True))

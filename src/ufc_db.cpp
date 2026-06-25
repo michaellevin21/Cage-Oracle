@@ -342,7 +342,8 @@ int ufc_compute_resume_by_fighter_id_out(UfcDb* db, long long fighter_id, double
     return 1;
 }
 
-char* ufc_find_similar_matchups(UfcDb* db, long long fighter_a_id, long long fighter_b_id, int top_k) {
+char* ufc_find_similar_matchups(
+    UfcDb* db, long long fighter_a_id, long long fighter_b_id, double min_similarity) {
     if (!ensureOpen(db)) {
         return nullptr;
     }
@@ -354,14 +355,15 @@ char* ufc_find_similar_matchups(UfcDb* db, long long fighter_a_id, long long fig
         g_last_error = "fighter_b not found";
         return nullptr;
     }
-    const int k = top_k > 0 ? top_k : 5;
-    const ufc::SimilarMatchupResults results =
-        ufc::findSimilarHistoricalMatchups(connection(db), fighter_a_id, fighter_b_id, k);
+    const double threshold = min_similarity > 0.0 ? min_similarity : 0.50;
+    const ufc::SimilarMatchupResults results = ufc::findSimilarHistoricalMatchups(
+        connection(db), fighter_a_id, fighter_b_id, threshold);
     return duplicateJson(
         ufc::json::toJsonSimilarMatchups(connection(db), fighter_a_id, fighter_b_id, results));
 }
 
-char* ufc_find_similar_matchups_by_names(UfcDb* db, const char* fighter_a_name, const char* fighter_b_name, int top_k) {
+char* ufc_find_similar_matchups_by_names(
+    UfcDb* db, const char* fighter_a_name, const char* fighter_b_name, double min_similarity) {
     if (!ensureOpen(db) || !fighter_a_name || !fighter_b_name) {
         if (!fighter_a_name || !fighter_b_name) {
             g_last_error = "fighter name is null";
@@ -378,7 +380,7 @@ char* ufc_find_similar_matchups_by_names(UfcDb* db, const char* fighter_a_name, 
         g_last_error = std::string("fighter not found: ") + fighter_b_name;
         return nullptr;
     }
-    return ufc_find_similar_matchups(db, a->id, b->id, top_k);
+    return ufc_find_similar_matchups(db, a->id, b->id, min_similarity);
 }
 
 }  // extern "C"

@@ -106,9 +106,9 @@ UFC_DB_API int ufc_compute_resume_by_fighter_id_out(UfcDb* db, long long fighter
 
 /* Cosine similarity (comparable historical matchups) */
 UFC_DB_API char* ufc_find_similar_matchups(
-    UfcDb* db, long long fighter_a_id, long long fighter_b_id, int top_k);
+    UfcDb* db, long long fighter_a_id, long long fighter_b_id, double min_similarity);
 UFC_DB_API char* ufc_find_similar_matchups_by_names(
-    UfcDb* db, const char* fighter_a_name, const char* fighter_b_name, int top_k);
+    UfcDb* db, const char* fighter_a_name, const char* fighter_b_name, double min_similarity);
 
 #ifdef __cplusplus
 }

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import math
+import sqlite3
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from archetype_matchup_history import (
@@ -22,6 +25,17 @@ WEIGHT_MOMENTUM = 0.18
 WEIGHT_SIMILAR = 0.14
 WEIGHT_H2H_ONE_MEETING = 0.17
 WEIGHT_H2H_MULTI_MEETING = 0.25
+
+# Head-to-head recency decay (matches momentum scoring in FighterMomentum.cpp).
+H2H_SECONDS_PER_DAY = 86400
+H2H_RECENCY_FULL_WEIGHT_DAYS = 365
+H2H_RECENCY_HALF_LIFE_DAYS = 365.0
+H2H_MIN_RECENCY_WEIGHT = 0.12
+
+# Full-strength similar component when avg cosine similarity reaches this level.
+SIMILAR_CONFIDENCE_REFERENCE = 0.75
+# Minimum cosine similarity for comparable historical fights (see SimilaritySearch.cpp).
+SIMILAR_MIN_SIMILARITY = 0.50
 
 PROFILE_METRICS = frozenset(
     {
@@ -70,6 +84,39 @@ H2H_STAT_METRICS: dict[str, bool] = {
     "knockdowns": True,
     "control_time_seconds": True,
 }
+
+_FIGHT_COUNT_SQL = (
+    "SELECT COUNT(*) FROM fights WHERE fighter1_id = ? OR fighter2_id = ?"
+)
+
+
+def fighter_fight_count(
+    db: sqlite3.Connection | str | Path,
+    fighter_id: int,
+) -> int:
+    """Number of fights in the database for a fighter (as fighter1 or fighter2)."""
+    if isinstance(db, sqlite3.Connection):
+        row = db.execute(_FIGHT_COUNT_SQL, (fighter_id, fighter_id)).fetchone()
+        return int(row[0]) if row else 0
+
+    conn = sqlite3.connect(str(db))
+    try:
+        row = conn.execute(_FIGHT_COUNT_SQL, (fighter_id, fighter_id)).fetchone()
+        return int(row[0]) if row else 0
+    finally:
+        conn.close()
+
+
+def both_fighters_have_fight_history(
+    db: sqlite3.Connection | str | Path,
+    fighter_a_id: int,
+    fighter_b_id: int,
+) -> bool:
+    """True when each fighter appears in at least one fight row."""
+    return (
+        fighter_fight_count(db, fighter_a_id) >= 1
+        and fighter_fight_count(db, fighter_b_id) >= 1
+    )
 
 
 @dataclass
@@ -411,6 +458,13 @@ def _similar_hit_favors_fighter_a(
     return None
 
 
+def _similar_confidence(avg_similarity: float) -> float:
+    """How much to trust similar-matchup outcomes (0 = ignore, 1 = full strength)."""
+    if SIMILAR_CONFIDENCE_REFERENCE <= 0:
+        return 1.0
+    return min(1.0, max(0.0, avg_similarity / SIMILAR_CONFIDENCE_REFERENCE))
+
+
 def _similar_matchups_component(
     similar: dict[str, Any] | None,
 ) -> ComponentEstimate:
@@ -453,15 +507,20 @@ def _similar_matchups_component(
             detail="No decisive similar matchups",
         )
 
-    p_a = weighted_a / weighted_total
-    weight_scale = min(used / 5.0, 1.0)
+    raw_p = weighted_a / weighted_total
+    avg_sim = weighted_total / used
+    confidence = _similar_confidence(avg_sim)
+    p_a = 0.5 + (raw_p - 0.5) * confidence
     return ComponentEstimate(
         name="similar",
         label="Similar matchups",
         p_fighter_a=_clamp_prob(p_a),
-        blend_weight=WEIGHT_SIMILAR * weight_scale,
+        blend_weight=WEIGHT_SIMILAR * confidence,
         available=True,
-        detail=f"{used} comparable fights (similarity-weighted)",
+        detail=(
+            f"{used} comparable fights (>= {SIMILAR_MIN_SIMILARITY:.0%} sim); "
+            f"avg {avg_sim:.0%} (confidence {confidence:.0%})"
+        ),
     )
 
 
@@ -497,6 +556,23 @@ def _h2h_stats_edge(
     return score / weight
 
 
+def _h2h_recency_weight(event_date: int, now: int) -> float:
+    """Decay older prior meetings; full weight for the first year after the bout."""
+    days_since = (now - event_date) / H2H_SECONDS_PER_DAY
+    if days_since <= H2H_RECENCY_FULL_WEIGHT_DAYS:
+        return 1.0
+    days_past_grace = days_since - H2H_RECENCY_FULL_WEIGHT_DAYS
+    weight = 0.5 ** (days_past_grace / H2H_RECENCY_HALF_LIFE_DAYS)
+    return max(H2H_MIN_RECENCY_WEIGHT, weight)
+
+
+def _h2h_meeting_recency(hit: dict[str, Any], now: int) -> float:
+    event_date = hit.get("event_date")
+    if event_date is None:
+        return 1.0
+    return _h2h_recency_weight(int(event_date), now)
+
+
 def _h2h_blend_weight(*, decisive: int, stat_fights: int) -> float:
     """Scale H2H influence by how much prior meeting data exists."""
     evidence = decisive if decisive > 0 else stat_fights
@@ -524,23 +600,31 @@ def _h2h_component(
     fighter_a_id = int(similar["fighter_a_id"])
     fighter_b_id = int(similar["fighter_b_id"])
     meetings = similar.get("prior_meetings") or []
+    now = int(time.time())
 
     wins_a = 0
     wins_b = 0
+    weighted_wins_a = 0.0
+    record_weight = 0.0
     for hit in meetings:
+        recency = _h2h_meeting_recency(hit, now)
         outcome = _winner_is_fighter_a(hit, fighter_a_id, fighter_b_id)
         if outcome is True:
             wins_a += 1
+            weighted_wins_a += recency
+            record_weight += recency
         elif outcome is False:
             wins_b += 1
+            record_weight += recency
 
     record_p: float | None = None
     decisive = wins_a + wins_b
-    if decisive > 0:
-        record_p = wins_a / decisive
+    if record_weight > 0:
+        record_p = weighted_wins_a / record_weight
 
     stats_a_totals: dict[str, float] = {k: 0.0 for k in H2H_STAT_METRICS}
     stats_b_totals: dict[str, float] = {k: 0.0 for k in H2H_STAT_METRICS}
+    stats_weight = 0.0
     stat_fights = 0
 
     if db is not None and meetings:
@@ -548,20 +632,22 @@ def _h2h_component(
             fight_id = hit.get("fight_id")
             if fight_id is None:
                 continue
+            recency = _h2h_meeting_recency(hit, now)
             rows = db.list_round_stats_for_fight(int(fight_id))
             per_a = _aggregate_round_stats(rows, fighter_a_id)
             per_b = _aggregate_round_stats(rows, fighter_b_id)
             if not per_a or not per_b:
                 continue
             for key in H2H_STAT_METRICS:
-                stats_a_totals[key] += per_a.get(key, 0.0)
-                stats_b_totals[key] += per_b.get(key, 0.0)
+                stats_a_totals[key] += per_a.get(key, 0.0) * recency
+                stats_b_totals[key] += per_b.get(key, 0.0) * recency
+            stats_weight += recency
             stat_fights += 1
 
     stats_p: float | None = None
-    if stat_fights > 0:
-        avg_a = {k: stats_a_totals[k] / stat_fights for k in H2H_STAT_METRICS}
-        avg_b = {k: stats_b_totals[k] / stat_fights for k in H2H_STAT_METRICS}
+    if stats_weight > 0:
+        avg_a = {k: stats_a_totals[k] / stats_weight for k in H2H_STAT_METRICS}
+        avg_b = {k: stats_b_totals[k] / stats_weight for k in H2H_STAT_METRICS}
         edge = _h2h_stats_edge(avg_a, avg_b)
         if edge is not None:
             stats_p = _clamp_prob(_sigmoid(2.5 * edge))
@@ -576,17 +662,26 @@ def _h2h_component(
             detail="No prior meetings",
         )
 
+    recency_scale = (
+        sum(_h2h_meeting_recency(hit, now) for hit in meetings) / len(meetings)
+        if meetings
+        else 1.0
+    )
+
     if record_p is not None and stats_p is not None:
         p_a = 0.6 * record_p + 0.4 * stats_p
-        detail = f"{wins_a}-{wins_b} record; stats from {stat_fights} fight(s)"
+        detail = (
+            f"{wins_a}-{wins_b} record (recency-weighted); "
+            f"stats from {stat_fights} fight(s)"
+        )
     elif record_p is not None:
         p_a = record_p
-        detail = f"{wins_a}-{wins_b} record across {decisive} meeting(s)"
+        detail = f"{wins_a}-{wins_b} record across {decisive} meeting(s) (recency-weighted)"
     else:
         p_a = stats_p or 0.5
-        detail = f"Stat edge from {stat_fights} prior meeting(s)"
+        detail = f"Stat edge from {stat_fights} prior meeting(s) (recency-weighted)"
 
-    blend_weight = _h2h_blend_weight(decisive=decisive, stat_fights=stat_fights)
+    blend_weight = _h2h_blend_weight(decisive=decisive, stat_fights=stat_fights) * recency_scale
     return ComponentEstimate(
         name="h2h",
         label="Head-to-head",
@@ -641,6 +736,16 @@ def attach_win_probability(
     db: Any | None = None,
     min_style_sample: int = DEFAULT_MIN_SAMPLE,
 ) -> dict[str, Any]:
+    if db is not None:
+        fighter_a_id = int(matchup["fighter_a"]["id"])
+        fighter_b_id = int(matchup["fighter_b"]["id"])
+        db_path = getattr(db, "db_path", None)
+        if db_path is not None and not both_fighters_have_fight_history(
+            db_path, fighter_a_id, fighter_b_id
+        ):
+            matchup.pop("win_probability", None)
+            return matchup
+
     estimate = estimate_win_probability(
         matchup,
         similar_matchups,

@@ -8,6 +8,8 @@ import sys
 from ctypes import CDLL, POINTER, Structure, byref, c_char_p, c_double, c_int, c_longlong, c_void_p, string_at
 from pathlib import Path
 
+DEFAULT_MIN_SIMILARITY = 0.50
+
 
 class UfcCareerTotals(Structure):
     _fields_ = [
@@ -74,6 +76,7 @@ class UfcDb:
 
         self._lib = CDLL(str(lib_path))
         self._configure_signatures()
+        self.db_path = Path(db_path)
 
         self._lib.ufc_db_open.restype = c_void_p
         self._handle = self._lib.ufc_db_open(str(db_path).encode("utf-8"))
@@ -114,8 +117,8 @@ class UfcDb:
         lib.ufc_compute_resume_by_fighter_id_out.restype = c_int
 
         for name, argtypes in (
-            ("ufc_find_similar_matchups", [c_void_p, c_longlong, c_longlong, c_int]),
-            ("ufc_find_similar_matchups_by_names", [c_void_p, c_char_p, c_char_p, c_int]),
+            ("ufc_find_similar_matchups", [c_void_p, c_longlong, c_longlong, c_double]),
+            ("ufc_find_similar_matchups_by_names", [c_void_p, c_char_p, c_char_p, c_double]),
             ("ufc_get_fights_by_fighters", [c_void_p, c_longlong, c_longlong]),
             ("ufc_list_round_stats_for_fight", [c_void_p, c_longlong]),
         ):
@@ -198,10 +201,13 @@ class UfcDb:
         return float(score.value)
 
     def find_similar_matchups(
-        self, fighter_a_id: int, fighter_b_id: int, top_k: int = 5
+        self,
+        fighter_a_id: int,
+        fighter_b_id: int,
+        min_similarity: float = DEFAULT_MIN_SIMILARITY,
     ) -> dict:
         ptr = self._lib.ufc_find_similar_matchups(
-            self._handle, fighter_a_id, fighter_b_id, top_k
+            self._handle, fighter_a_id, fighter_b_id, min_similarity
         )
         if not ptr:
             raise LookupError(self.last_error() or "similar matchups lookup failed")
@@ -229,13 +235,16 @@ class UfcDb:
         return data if isinstance(data, list) else []
 
     def find_similar_matchups_by_names(
-        self, fighter_a_name: str, fighter_b_name: str, top_k: int = 5
+        self,
+        fighter_a_name: str,
+        fighter_b_name: str,
+        min_similarity: float = DEFAULT_MIN_SIMILARITY,
     ) -> dict:
         ptr = self._lib.ufc_find_similar_matchups_by_names(
             self._handle,
             fighter_a_name.encode("utf-8"),
             fighter_b_name.encode("utf-8"),
-            top_k,
+            min_similarity,
         )
         if not ptr:
             raise LookupError(self.last_error() or "similar matchups lookup failed")

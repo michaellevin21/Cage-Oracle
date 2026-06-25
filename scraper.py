@@ -2,14 +2,14 @@
 UFC Stats Scraper - fighter pages, fight details, and SQLite
 
 Writes fighters, events, fights, round_stats (from ufcstats fight pages once per fight), and
-fighter_rankings (from ufc.com official rankings - name-matched to DB).
+fighter_rankings (from ufc.com meta rankings - name-matched to DB).
 
 Usage:
     python scraper.py                    # full catalog: all fighters + all fights (slow)
     python scraper.py 0d8011111be000b2   # single fighter by ufcstats id
     python scraper.py --sync-recent      # fighters on completed cards in the last 14 days
     python scraper.py --sync-recent --since-days 7
-    python scraper.py --rankings-only    # UFC.com rankings only (no ufcstats scraping)
+    python scraper.py --rankings-only    # UFC.com meta rankings only (no ufcstats scraping)
     python scraper.py --limit 12 --delay 0.5   # quick test: first 12 fighters in directory only
     python scraper.py --delay 2.0        # be kinder to the server between requests
 """
@@ -33,6 +33,7 @@ from bs4 import BeautifulSoup
 
 BASE_URL    = "http://ufcstats.com"
 EVENTS_COMPLETED_URL = f"{BASE_URL}/statistics/events/completed?page=all"
+EVENTS_UPCOMING_URL = f"{BASE_URL}/statistics/events/upcoming?page=all"
 DB_PATH     = "ufc.db"
 HEADERS     = {
     "User-Agent": (
@@ -143,6 +144,15 @@ class Event:
 
 
 @dataclass
+class EventFight:
+    fighter1_name:    str
+    fighter2_name:    str
+    fighter1_ufc_id:  str
+    fighter2_ufc_id:  str
+    weight_class:     str | None
+
+
+@dataclass
 class RoundStatEntry:
     fighter_ufc_id: str
     round_number: int
@@ -164,7 +174,7 @@ class RoundStatEntry:
     ground_strikes_landed: int
 
 
-# UFC.com hosts official rankings; ufcstats.com does not.
+# UFC.com hosts division meta rankings; ufcstats.com does not.
 UFC_RANKINGS_URL = "https://www.ufc.com/rankings"
 
 def get_page(url: str) -> BeautifulSoup:
@@ -748,6 +758,16 @@ def utc_day_start(dt: datetime | None = None) -> int:
 def discover_completed_events() -> list[Event]:
     """All events listed on ufcstats completed-events index (includes future dates)."""
     soup = get_page(EVENTS_COMPLETED_URL)
+    return _parse_events_index(soup)
+
+
+def discover_upcoming_events() -> list[Event]:
+    """Upcoming events listed on ufcstats upcoming-events index."""
+    soup = get_page(EVENTS_UPCOMING_URL)
+    return _parse_events_index(soup)
+
+
+def _parse_events_index(soup: BeautifulSoup) -> list[Event]:
     out: list[Event] = []
     for row in soup.select("tr.b-statistics__table-row"):
         link = row.select_one('a[href*="event-details"]')
@@ -764,6 +784,70 @@ def discover_completed_events() -> list[Event]:
             event_date=parse_date_to_unix(date_text) if date_text else None,
         ))
     return out
+
+
+def select_next_upcoming_event(events: list[Event]) -> Event | None:
+    """Nearest upcoming event by date (UTC day start), or None."""
+    today_start = utc_day_start()
+    upcoming = [e for e in events if e.event_date is not None and e.event_date >= today_start]
+    if not upcoming:
+        return None
+    upcoming.sort(key=lambda e: e.event_date or 0)
+    return upcoming[0]
+
+
+def scrape_event_fights(event_id: str) -> list[EventFight]:
+    """Fight pairings from an ufcstats event-details page (main card first)."""
+    url = f"{BASE_URL}/event-details/{event_id}"
+    soup = get_page(url)
+    fights: list[EventFight] = []
+    for row in soup.select("tr.b-fight-details__table-row"):
+        links = row.select('a[href*="fighter-details"]')
+        if len(links) < 2:
+            continue
+        f1_id = extract_id_from_url(links[0].get("href", "") or "")
+        f2_id = extract_id_from_url(links[1].get("href", "") or "")
+        if not f1_id or not f2_id:
+            continue
+        cols = row.find_all("td")
+        weight_class = get_text(cols[6]) if len(cols) > 6 else None
+        fights.append(EventFight(
+            fighter1_name=get_text(links[0]),
+            fighter2_name=get_text(links[1]),
+            fighter1_ufc_id=f1_id,
+            fighter2_ufc_id=f2_id,
+            weight_class=weight_class or None,
+        ))
+    return fights
+
+
+def scrape_event_meta(event_id: str) -> Event:
+    """Event name and date from an ufcstats event-details page."""
+    url = f"{BASE_URL}/event-details/{event_id}"
+    soup = get_page(url)
+    name = get_text(soup.find("h2")) or f"Event {event_id}"
+    event_date: int | None = None
+    for item in soup.select("li.b-list__box-list-item"):
+        text = get_text(item)
+        if text.lower().startswith("date:"):
+            date_text = text.split(":", 1)[1].strip()
+            event_date = parse_date_to_unix(date_text) if date_text else None
+            break
+    return Event(
+        ufc_event_id=event_id.lower(),
+        name=name,
+        event_date=event_date,
+    )
+
+
+def find_event_by_id(event_id: str) -> Event | None:
+    """Look up an event on ufcstats upcoming or completed indexes."""
+    event_id = event_id.lower()
+    for discover in (discover_upcoming_events, discover_completed_events):
+        for event in discover():
+            if event.ufc_event_id == event_id:
+                return event
+    return None
 
 
 def select_events_for_sync(events: list[Event], since_days: int) -> list[Event]:
@@ -1333,18 +1417,21 @@ def resolve_fighter_id_by_name(
 
 
 def scrape_ufc_rankings_rows() -> list[tuple[str, int, str]]:
-    """Parse UFC_RANKINGS_URL - returns (weight_class, rank, display_name)."""
+    """Parse UFC meta rankings - returns (weight_class, rank, display_name)."""
     r = requests.get(UFC_RANKINGS_URL, headers=HEADERS, timeout=25)
     r.raise_for_status()
     time.sleep(DELAY)
     soup = BeautifulSoup(r.text, "html.parser")
+    meta_view = soup.select_one(".view-display-id-meta_rankings")
+    if meta_view is None:
+        raise RuntimeError("Could not find UFC meta rankings section on rankings page")
     out: list[tuple[str, int, str]] = []
-    for grp in soup.select(".view-grouping"):
+    for grp in meta_view.select(".view-grouping"):
         hdr = grp.select_one(".view-grouping-header")
         if not hdr:
             continue
         weight_class = re.sub(r"Top Rank.*$", "", hdr.get_text(strip=True), flags=re.I).strip()
-        if not weight_class:
+        if not weight_class or "pound-for-pound" in weight_class.lower():
             continue
 
         tbody = grp.find("tbody")
@@ -1369,7 +1456,7 @@ def scrape_ufc_rankings_rows() -> list[tuple[str, int, str]]:
 
         if tbody:
             for tr in tbody.find_all("tr"):
-                rank_td = tr.select_one(".views-field-weight-class-rank")
+                rank_td = tr.select_one(".views-field-meta-weight-class-rank")
                 title_a = tr.select_one(".views-field-title a")
                 if not rank_td or not title_a:
                     continue
@@ -1381,7 +1468,7 @@ def scrape_ufc_rankings_rows() -> list[tuple[str, int, str]]:
 
 
 def sync_fighter_rankings(conn: sqlite3.Connection) -> tuple[int, int]:
-    """Replace fighter_rankings from ufc.com. Returns (inserted, skipped_unmatched)."""
+    """Replace fighter_rankings from ufc.com meta rankings. Returns (inserted, skipped_unmatched)."""
     conn.execute("DELETE FROM fighter_rankings")
     rows = scrape_ufc_rankings_rows()
     name_lookup = build_fighter_name_lookup(conn)
@@ -1420,7 +1507,7 @@ def main() -> None:
     global DELAY
     default_delay = DELAY
     parser = argparse.ArgumentParser(
-        description="Scrape ufcstats.com into SQLite (fighters, fights, round stats; UFC.com rankings).",
+        description="Scrape ufcstats.com into SQLite (fighters, fights, round stats; UFC.com meta rankings).",
     )
     parser.add_argument(
         "fighter_id",
@@ -1457,7 +1544,7 @@ def main() -> None:
     parser.add_argument(
         "--rankings-only",
         action="store_true",
-        help="Only refresh fighter_rankings from ufc.com (no ufcstats fighter/event scraping).",
+        help="Only refresh fighter_rankings from ufc.com meta rankings (no ufcstats fighter/event scraping).",
     )
     args = parser.parse_args()
 
@@ -1482,7 +1569,7 @@ def main() -> None:
 
     try:
         if args.rankings_only:
-            print("Syncing UFC.com rankings only ...")
+            print("Syncing UFC.com meta rankings only ...")
             ins, sk = sync_fighter_rankings(conn)
             print(f"  {ins} rows stored, {sk} names not matched in local fighters table.")
             print(f"  Database: {DB_PATH}")
@@ -1545,7 +1632,7 @@ def main() -> None:
         if not args.rankings_only:
             try:
                 ins, sk = sync_fighter_rankings(conn)
-                print(f"  UFC.com rankings: {ins} rows stored, {sk} names not matched in local fighters table.")
+                print(f"  UFC.com meta rankings: {ins} rows stored, {sk} names not matched in local fighters table.")
             except Exception as exc:
                 print(f"  [warn] rankings sync failed: {exc}")
 

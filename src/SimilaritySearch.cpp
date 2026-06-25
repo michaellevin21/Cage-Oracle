@@ -24,37 +24,6 @@ bool isPriorMeeting(const PrefightFightRecord& fight, int64_t fighter_a_id, int6
         || (fight.fighter1_id == fighter_b_id && fight.fighter2_id == fighter_a_id);
 }
 
-void maintainTopK(std::vector<SimilarMatchupHit>& hits, SimilarMatchupHit candidate, int top_k) {
-    if (top_k <= 0) {
-        return;
-    }
-    auto dominated = [&](const SimilarMatchupHit& existing) {
-        return existing.similarity >= candidate.similarity
-            && (existing.similarity > candidate.similarity || existing.fight_id < candidate.fight_id);
-    };
-    if (hits.size() < static_cast<size_t>(top_k)) {
-        hits.push_back(candidate);
-        std::sort(hits.begin(), hits.end(), [](const SimilarMatchupHit& a, const SimilarMatchupHit& b) {
-            if (a.similarity != b.similarity) {
-                return a.similarity > b.similarity;
-            }
-            return a.fight_id < b.fight_id;
-        });
-        return;
-    }
-    if (dominated(hits.back())) {
-        return;
-    }
-    hits.push_back(candidate);
-    std::sort(hits.begin(), hits.end(), [](const SimilarMatchupHit& a, const SimilarMatchupHit& b) {
-        if (a.similarity != b.similarity) {
-            return a.similarity > b.similarity;
-        }
-        return a.fight_id < b.fight_id;
-    });
-    hits.resize(static_cast<size_t>(top_k));
-}
-
 SimilarMatchupHit makeHit(const PrefightFightRecord& fight, double similarity) {
     SimilarMatchupHit hit;
     hit.fight_id = fight.id;
@@ -160,9 +129,13 @@ std::vector<double> prepareMatchupVector(const std::vector<double>& raw, const A
     return vec;
 }
 
-SimilarMatchupResults findSimilarHistoricalMatchups(sqlite3* db, int64_t fighter_a_id, int64_t fighter_b_id, int top_k) {
+SimilarMatchupResults findSimilarHistoricalMatchups(
+    sqlite3* db,
+    int64_t fighter_a_id,
+    int64_t fighter_b_id,
+    double min_similarity) {
     SimilarMatchupResults results;
-    if (fighter_a_id == fighter_b_id || top_k <= 0) {
+    if (fighter_a_id == fighter_b_id || min_similarity < 0.0) {
         return results;
     }
     if (!Fighter::getById(db, fighter_a_id) || !Fighter::getById(db, fighter_b_id)) {
@@ -216,10 +189,18 @@ SimilarMatchupResults findSimilarHistoricalMatchups(sqlite3* db, int64_t fighter
 
         if (prior) {
             results.prior_meetings.push_back(std::move(hit));
-        } else {
-            maintainTopK(results.similar_matchups, hit, top_k);
+        } else if (similarity >= min_similarity) {
+            results.similar_matchups.push_back(std::move(hit));
         }
     }
+
+    std::sort(results.similar_matchups.begin(), results.similar_matchups.end(),
+        [](const SimilarMatchupHit& a, const SimilarMatchupHit& b) {
+            if (a.similarity != b.similarity) {
+                return a.similarity > b.similarity;
+            }
+            return a.fight_id < b.fight_id;
+        });
 
     std::sort(results.prior_meetings.begin(), results.prior_meetings.end(),
         [](const SimilarMatchupHit& a, const SimilarMatchupHit& b) {

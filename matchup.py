@@ -20,8 +20,7 @@ sys.path.insert(0, str(_ROOT / "python"))
 from archetype_matchup_history import attach_archetype_history, get_archetype_index  # noqa: E402
 from tale_of_the_tape import render_matchup, render_matchup_history, render_win_probability  # noqa: E402
 from ufc_db_ffi import UfcDb  # noqa: E402
-from win_probability import attach_win_probability  # noqa: E402
-
+from win_probability import attach_win_probability, both_fighters_have_fight_history  # noqa: E402
 
 def _default_db_path() -> Path:
     return _ROOT / "ufc.db"
@@ -106,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
             matchup = db.get_matchup_by_names(name_a, name_b)
             index = get_archetype_index(args.db, lib_path=args.lib)
             attach_archetype_history(matchup, index)
-            similar_matchups = db.find_similar_matchups_by_names(name_a, name_b, top_k=5)
+            similar_matchups = db.find_similar_matchups_by_names(name_a, name_b)
             attach_win_probability(
                 matchup,
                 similar_matchups,
@@ -128,6 +127,14 @@ def main(argv: list[str] | None = None) -> int:
     win_prob = render_win_probability(matchup)
     if win_prob:
         print(win_prob, end="")
+    elif "win_probability" not in matchup:
+        id_a = int(matchup["fighter_a"]["id"])
+        id_b = int(matchup["fighter_b"]["id"])
+        if not both_fighters_have_fight_history(args.db, id_a, id_b):
+            print(
+                "\nNo prediction: both fighters need at least 1 fight in the database.\n",
+                end="",
+            )
     return 0
 
 
