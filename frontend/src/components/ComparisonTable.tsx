@@ -1,0 +1,183 @@
+import { useState } from "react";
+import type {
+  ComparisonRow,
+  MatchupMomentumBreakdown,
+  MatchupResumeBreakdown,
+} from "../types";
+import { HelpPanelScope } from "./HelpPanelContext";
+import { FighterName, fighterNameClass } from "./FighterName";
+import { metricHelpFor } from "../metricHelpContent";
+import { MomentumBreakdownHelp } from "./MomentumBreakdownHelp";
+import { ResumeBreakdownHelp } from "./ResumeBreakdownHelp";
+
+interface ComparisonTableProps {
+  title: string;
+  rows: ComparisonRow[];
+  nameA: string;
+  nameB: string;
+  resumeBreakdown?: MatchupResumeBreakdown;
+  momentumBreakdown?: MatchupMomentumBreakdown;
+  expandOnHelp?: boolean;
+}
+
+const METRICS_WITHOUT_EDGE = new Set([
+  "stance",
+  "weight_class",
+  "archetype",
+  "career_rounds",
+]);
+
+function edgeLabel(row: ComparisonRow): string {
+  if (METRICS_WITHOUT_EDGE.has(row.metric)) return "";
+  return row.edge;
+}
+
+function edgeClass(row: ComparisonRow, side: "a" | "b"): string {
+  if (METRICS_WITHOUT_EDGE.has(row.metric)) return "";
+  if (row.edge === "Even") return "";
+  const { advantage } = row;
+  if (side === "a" && advantage === "fighter_a") return "cell-advantage-a";
+  if (side === "b" && advantage === "fighter_b") return "cell-advantage-b";
+  return "";
+}
+
+function edgeBadgeClass(row: ComparisonRow): string {
+  if (row.edge === "Even") return "edge-badge";
+  const { advantage } = row;
+  if (advantage === "fighter_a") {
+    return `edge-badge ${fighterNameClass("a")}`;
+  }
+  if (advantage === "fighter_b") {
+    return `edge-badge ${fighterNameClass("b")}`;
+  }
+  return "edge-badge";
+}
+
+function fighterCellValue(
+  row: ComparisonRow,
+  side: "a" | "b",
+  fighterName: string,
+  resumeBreakdown?: MatchupResumeBreakdown,
+  momentumBreakdown?: MatchupMomentumBreakdown,
+) {
+  const value = side === "a" ? row.fighter_a : row.fighter_b;
+
+  if (row.metric === "resume_score" && resumeBreakdown) {
+    const breakdown =
+      side === "a" ? resumeBreakdown.fighter_a : resumeBreakdown.fighter_b;
+    return (
+      <span className="metric-value-with-help">
+        <span>{value}</span>
+        <ResumeBreakdownHelp
+          fighterName={fighterName}
+          fighterSide={side}
+          breakdown={breakdown}
+        />
+      </span>
+    );
+  }
+
+  if (row.metric === "momentum_score" && momentumBreakdown) {
+    const breakdown =
+      side === "a"
+        ? momentumBreakdown.fighter_a
+        : momentumBreakdown.fighter_b;
+    return (
+      <span className="metric-value-with-help">
+        <span>{value}</span>
+        <MomentumBreakdownHelp
+          fighterName={fighterName}
+          fighterSide={side}
+          breakdown={breakdown}
+        />
+      </span>
+    );
+  }
+
+  return value;
+}
+
+export function ComparisonTable({
+  title,
+  rows,
+  nameA,
+  nameB,
+  resumeBreakdown,
+  momentumBreakdown,
+  expandOnHelp = false,
+}: ComparisonTableProps) {
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  if (rows.length === 0) return null;
+
+  const sectionClass = [
+    "comparison-section",
+    expandOnHelp && helpOpen ? "comparison-section-help-open" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const content = (
+    <section className={sectionClass}>
+      <h3 className="section-title">{title}</h3>
+      <div className="table-wrap">
+        <table className="comparison-table">
+          <thead>
+            <tr>
+              <th className="col-metric">Metric</th>
+              <th className="col-fighter">
+                <FighterName side="a">{nameA}</FighterName>
+              </th>
+              <th className="col-fighter">
+                <FighterName side="b">{nameB}</FighterName>
+              </th>
+              <th className="col-edge">Edge</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.metric}>
+                <td className="col-metric">
+                  {metricHelpFor(row.metric, row.label)}
+                </td>
+                <td className={`col-fighter ${edgeClass(row, "a")}`}>
+                  {fighterCellValue(
+                    row,
+                    "a",
+                    nameA,
+                    resumeBreakdown,
+                    momentumBreakdown,
+                  )}
+                </td>
+                <td className={`col-fighter ${edgeClass(row, "b")}`}>
+                  {fighterCellValue(
+                    row,
+                    "b",
+                    nameB,
+                    resumeBreakdown,
+                    momentumBreakdown,
+                  )}
+                </td>
+                <td className="col-edge">
+                  {edgeLabel(row) && (
+                    <span className={edgeBadgeClass(row)}>
+                      {edgeLabel(row)}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+
+  if (!expandOnHelp) {
+    return content;
+  }
+
+  return (
+    <HelpPanelScope onAnyOpenChange={setHelpOpen}>{content}</HelpPanelScope>
+  );
+}

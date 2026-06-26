@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 PROFILE_METRICS = (
@@ -16,6 +16,9 @@ PROFILE_METRICS = (
     "weight_class",
     "archetype",
 )
+
+# Profile/career fields that never show edge labels or advantage highlighting.
+BLANK_EDGE_METRICS = frozenset({"stance", "weight_class", "archetype", "career_rounds"})
 
 METRIC_LABELS: dict[str, str] = {
     "age": "Age",
@@ -55,7 +58,12 @@ def _label(metric: str) -> str:
 def _age_from_dob(date_of_birth: Any) -> int | None:
     if date_of_birth is None:
         return None
-    born = datetime.fromtimestamp(int(date_of_birth), tz=timezone.utc)
+    try:
+        born = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(
+            seconds=int(date_of_birth)
+        )
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
     today = datetime.now(timezone.utc)
     age = today.year - born.year
     if (today.month, today.day) < (born.month, born.day):
@@ -149,8 +157,8 @@ def _edge_marker(
     label_a: str = "",
     label_b: str = "",
 ) -> str:
-    if metric == "career_rounds":
-        return "N/A"
+    if metric in BLANK_EDGE_METRICS:
+        return ""
     if metric and row is not None and _values_tied_for_display(metric, row):
         return "Even"
     if advantage == "fighter_a":
@@ -375,3 +383,147 @@ def render_similar_matchups(result: dict[str, Any]) -> str:
 def render_matchup_history(result: dict[str, Any]) -> str:
     parts = [render_prior_meetings(result), render_similar_matchups(result)]
     return "".join(part for part in parts if part)
+
+
+def _comparison_rows(
+    by_metric: dict[str, dict[str, Any]],
+    metrics: tuple[str, ...],
+    *,
+    edge_label_a: str,
+    edge_label_b: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for metric in metrics:
+        if metric not in by_metric:
+            continue
+        row = by_metric[metric]
+        edge = _edge_marker(
+            row.get("advantage"),
+            metric=metric,
+            row=row,
+            label_a=edge_label_a,
+            label_b=edge_label_b,
+        )
+        if metric in BLANK_EDGE_METRICS:
+            edge = ""
+            advantage = None
+        elif edge == "Even":
+            advantage = None
+        else:
+            advantage = row.get("advantage")
+        rows.append(
+            {
+                "metric": metric,
+                "label": _label(metric),
+                "fighter_a": _format_value(metric, row, "fighter_a"),
+                "fighter_b": _format_value(metric, row, "fighter_b"),
+                "advantage": advantage,
+                "edge": edge,
+            }
+        )
+    return rows
+
+
+def matchup_to_structured(matchup: dict[str, Any]) -> dict[str, Any]:
+    """Serialize matchup data for JSON API / React UI."""
+    fighter_a = matchup["fighter_a"]
+    fighter_b = matchup["fighter_b"]
+    name_a = fighter_a["name"]
+    name_b = fighter_b["name"]
+    edge_label_a = _edge_name_label(name_a, name_b)
+    edge_label_b = _edge_name_label(name_b, name_a)
+    by_metric = _comparisons_by_metric(matchup)
+    age_row = _age_comparison_row(fighter_a, fighter_b)
+    if age_row["fighter_a"] is not None or age_row["fighter_b"] is not None:
+        by_metric["age"] = age_row
+
+    career_metrics = tuple(m for m in by_metric if m not in PROFILE_METRICS)
+    profile = _comparison_rows(
+        by_metric, PROFILE_METRICS, edge_label_a=edge_label_a, edge_label_b=edge_label_b
+    )
+    career = _comparison_rows(
+        by_metric, career_metrics, edge_label_a=edge_label_a, edge_label_b=edge_label_b
+    )
+
+    win_prob = matchup.get("win_probability")
+    prediction: dict[str, Any] | None = None
+    if win_prob:
+        p_a = float(win_prob["p_fighter_a"])
+        p_b = float(win_prob["p_fighter_b"])
+        if abs(p_a - p_b) < 1e-9:
+            prediction = {
+                "type": "even",
+                "winner_name": None,
+                "p_fighter_a": p_a,
+                "p_fighter_b": p_b,
+                "certainty_pct": 100.0 * p_a,
+            }
+        elif p_a > p_b:
+            prediction = {
+                "type": "winner",
+                "winner_name": name_a,
+                "p_fighter_a": p_a,
+                "p_fighter_b": p_b,
+                "certainty_pct": 100.0 * p_a,
+            }
+        else:
+            prediction = {
+                "type": "winner",
+                "winner_name": name_b,
+                "p_fighter_a": p_a,
+                "p_fighter_b": p_b,
+                "certainty_pct": 100.0 * p_b,
+            }
+
+    history = matchup.get("archetype_history")
+    archetype_summaries: list[str] = []
+    if history:
+        summaries = history.get("summaries")
+        if not summaries and history.get("summary"):
+            summaries = [history["summary"]]
+        if summaries:
+            archetype_summaries = list(summaries)
+
+    return {
+        "fighter_a": {"name": name_a, "weight_class": fighter_a.get("weight_class")},
+        "fighter_b": {"name": name_b, "weight_class": fighter_b.get("weight_class")},
+        "profile": profile,
+        "career": career,
+        "archetype_summaries": archetype_summaries,
+        "prediction": prediction,
+    }
+
+
+def _history_hit_to_structured(hit: dict[str, Any], *, show_similarity: bool) -> dict[str, Any]:
+    f1_id = hit.get("fighter1_id")
+    f2_id = hit.get("fighter2_id")
+    winner_id = hit.get("winner_id")
+    return {
+        "fighter1_name": hit.get("fighter1_name") or f"id {f1_id}",
+        "fighter2_name": hit.get("fighter2_name") or f"id {f2_id}",
+        "fighter1_id": f1_id,
+        "fighter2_id": f2_id,
+        "winner_id": winner_id,
+        "fighter1_won": bool(winner_id and f1_id is not None and int(winner_id) == int(f1_id)),
+        "fighter2_won": bool(winner_id and f2_id is not None and int(winner_id) == int(f2_id)),
+        "event_name": hit.get("event_name") or "",
+        "event_date": _format_event_date(hit),
+        "similarity": float(hit["similarity"]) if show_similarity and isinstance(hit.get("similarity"), (int, float)) else None,
+        "similarity_pct": (
+            round(100.0 * max(0.0, float(hit["similarity"])), 1)
+            if show_similarity and isinstance(hit.get("similarity"), (int, float))
+            else None
+        ),
+    }
+
+
+def history_to_structured(result: dict[str, Any]) -> dict[str, Any]:
+    prior = [
+        _history_hit_to_structured(hit, show_similarity=False)
+        for hit in (result.get("prior_meetings") or [])
+    ]
+    similar = [
+        _history_hit_to_structured(hit, show_similarity=True)
+        for hit in (result.get("similar_matchups") or [])
+    ]
+    return {"prior_meetings": prior, "similar_matchups": similar}

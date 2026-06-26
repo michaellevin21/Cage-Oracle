@@ -27,6 +27,7 @@ constexpr double kUnrankedOpponentQuality = 0.35;
 constexpr double kTitleFightQualityBonus = 0.12;
 constexpr double kFinishWinMultiplier = 1.30;
 constexpr double kFinishRateBoostWeight = 0.20;
+constexpr double kLossContributionBase = 1.0;
 
 constexpr double kNeutralScore = 50.0;
 constexpr double kMaxFightContribution = 1.30;
@@ -37,6 +38,7 @@ struct MomentumFight {
     bool won = false;
     bool lost = false;
     bool is_finish_win = false;
+    bool is_finish_loss = false;
     bool is_title_fight = false;
 };
 
@@ -107,6 +109,21 @@ double finishMultiplier(bool won, bool is_finish_win) {
     return 1.0;
 }
 
+double finishLossMultiplier(bool lost, bool is_finish_loss) {
+    if (lost && is_finish_loss) {
+        return kFinishWinMultiplier;
+    }
+    return 1.0;
+}
+
+double fightContribution(
+    bool won, bool is_finish_win, bool is_finish_loss, double quality) {
+    if (won) {
+        return quality * finishMultiplier(won, is_finish_win);
+    }
+    return -kLossContributionBase * finishLossMultiplier(true, is_finish_loss);
+}
+
 std::vector<MomentumFight> loadRecentDecisiveFights(sqlite3* db, int64_t fighter_id) {
     const char* sql =
         "SELECT e.event_date, "
@@ -145,6 +162,7 @@ std::vector<MomentumFight> loadRecentDecisiveFights(sqlite3* db, int64_t fighter
         row.won = winner_id == fighter_id;
         row.lost = !row.won;
         row.is_finish_win = row.won && isFinishMethod(result_method);
+        row.is_finish_loss = row.lost && isFinishMethod(result_method);
         fights.push_back(row);
     }
 
@@ -203,9 +221,8 @@ std::optional<double> computeMomentumScore(sqlite3* db, int64_t fighter_id) {
     for (const MomentumFight& fight : fights) {
         const double recency = recencyWeight(fight.event_date, now);
         const double quality = oppositionQuality(db, fight.opponent_id, fight.is_title_fight);
-        const double outcome = fight.won ? 1.0 : -1.0;
-        const double finish = finishMultiplier(fight.won, fight.is_finish_win);
-        const double contribution = outcome * quality * finish;
+        const double contribution = fightContribution(
+            fight.won, fight.is_finish_win, fight.is_finish_loss, quality);
 
         weighted_sum += contribution * recency;
         weight_total += recency;

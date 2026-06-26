@@ -22,3 +22,7 @@ cmake-build-*/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/

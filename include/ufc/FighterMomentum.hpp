@@ -16,8 +16,8 @@ namespace ufc {
 /// fighters with fewer decisive bouts return nullopt.
 ///
 /// Recency is measured from today: full weight for one year after each bout,
-/// then exponential decay. Each bout is scored by outcome, opponent quality
-/// (rankings + title fights), and whether the win was a finish (KO/TKO or submission).
+/// then exponential decay. Wins scale with opponent quality; losses use a fixed
+/// penalty regardless of opponent quality. Finish wins and finish losses apply a 1.30x multiplier.
 std::optional<double> computeMomentumScore(sqlite3* db, int64_t fighter_id);
 
 }  // namespace ufc
