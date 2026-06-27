@@ -1,5 +1,6 @@
 #include "ufc/JsonSerialize.hpp"
 
+#include "ufc/AnalysisTypes.hpp"
 #include "ufc/Fight.hpp"
 #include "ufc/Fighter.hpp"
 #include "ufc/Matchup.hpp"
@@ -15,6 +16,17 @@ namespace {
 
 std::string quote(const std::string& value) {
     return "\"" + escape(value) + "\"";
+}
+
+std::string optString(const std::optional<std::string>& v) {
+    return v ? quote(*v) : "null";
+}
+
+std::string optDouble(const std::optional<double>& v) {
+    if (!v) return "null";
+    std::ostringstream oss;
+    oss << std::setprecision(17) << *v;
+    return oss.str();
 }
 
 }  // namespace
@@ -235,6 +247,202 @@ std::string toJsonSimilarMatchups(sqlite3* db, int64_t fighter_a_id, int64_t fig
         << writeArray("prior_meetings", results.prior_meetings, true) << ','
         << writeArray("similar_matchups", results.similar_matchups, true)
         << '}';
+    return oss.str();
+}
+
+std::string toJson(const ComparisonRow& row) {
+    std::ostringstream oss;
+    oss << '{'
+        << "\"metric\":" << quote(row.metric) << ','
+        << "\"label\":" << quote(row.label) << ','
+        << "\"fighter_a\":" << quote(row.fighter_a) << ','
+        << "\"fighter_b\":" << quote(row.fighter_b) << ','
+        << "\"advantage\":" << optString(row.advantage) << ','
+        << "\"edge\":" << quote(row.edge)
+        << '}';
+    return oss.str();
+}
+
+std::string toJson(const Prediction& p) {
+    std::ostringstream oss;
+    oss << std::setprecision(17);
+    oss << '{'
+        << "\"type\":" << quote(p.type) << ','
+        << "\"winner_name\":" << optString(p.winner_name) << ','
+        << "\"p_fighter_a\":" << p.p_fighter_a << ','
+        << "\"p_fighter_b\":" << p.p_fighter_b << ','
+        << "\"certainty_pct\":" << p.certainty_pct
+        << '}';
+    return oss.str();
+}
+
+std::string toJson(const TaleOfTheTape& tape) {
+    auto writeRows = [](const std::vector<ComparisonRow>& rows) {
+        std::ostringstream oss;
+        oss << '[';
+        for (size_t i = 0; i < rows.size(); ++i) {
+            if (i > 0) oss << ',';
+            oss << toJson(rows[i]);
+        }
+        oss << ']';
+        return oss.str();
+    };
+    auto writeSummaries = [](const std::vector<std::string>& items) {
+        std::ostringstream oss;
+        oss << '[';
+        for (size_t i = 0; i < items.size(); ++i) {
+            if (i > 0) oss << ',';
+            oss << quote(items[i]);
+        }
+        oss << ']';
+        return oss.str();
+    };
+    std::ostringstream oss;
+    oss << '{'
+        << "\"fighter_a\":{\"name\":" << quote(tape.fighter_a.name)
+        << ",\"weight_class\":" << optString(tape.fighter_a.weight_class) << "},"
+        << "\"fighter_b\":{\"name\":" << quote(tape.fighter_b.name)
+        << ",\"weight_class\":" << optString(tape.fighter_b.weight_class) << "},"
+        << "\"profile\":" << writeRows(tape.profile) << ','
+        << "\"career\":" << writeRows(tape.career) << ','
+        << "\"archetype_summaries\":" << writeSummaries(tape.archetype_summaries) << ','
+        << "\"prediction\":" << (tape.prediction ? toJson(*tape.prediction) : "null")
+        << '}';
+    return oss.str();
+}
+
+std::string toJson(const HistoryFight& h) {
+    std::ostringstream oss;
+    oss << std::setprecision(17);
+    oss << '{'
+        << "\"fighter1_name\":" << quote(h.fighter1_name) << ','
+        << "\"fighter2_name\":" << quote(h.fighter2_name) << ','
+        << "\"fighter1_id\":" << h.fighter1_id << ','
+        << "\"fighter2_id\":" << h.fighter2_id << ','
+        << "\"winner_id\":" << (h.winner_id > 0 ? std::to_string(h.winner_id) : "null") << ','
+        << "\"fighter1_won\":" << (h.fighter1_won ? "true" : "false") << ','
+        << "\"fighter2_won\":" << (h.fighter2_won ? "true" : "false") << ','
+        << "\"event_name\":" << quote(h.event_name) << ','
+        << "\"event_date\":" << optString(h.event_date) << ','
+        << "\"similarity\":" << optDouble(h.similarity) << ','
+        << "\"similarity_pct\":" << optDouble(h.similarity_pct)
+        << '}';
+    return oss.str();
+}
+
+std::string toJson(const MomentumBreakdown& m) {
+    std::ostringstream oss;
+    oss << std::setprecision(17);
+    oss << '{'
+        << "\"status\":" << quote(m.status) << ','
+        << "\"score\":" << optDouble(m.score) << ','
+        << "\"days_since_last_fight\":" << optDouble(m.days_since_last_fight) << ','
+        << "\"min_decisive_fights\":" << m.min_decisive_fights << ','
+        << "\"inactivity_days\":" << m.inactivity_days << ','
+        << "\"fights\":[";
+    for (size_t i = 0; i < m.fights.size(); ++i) {
+        if (i > 0) oss << ',';
+        const MomentumFight& f = m.fights[i];
+        oss << '{'
+            << "\"event_date\":" << quote(f.event_date) << ','
+            << "\"event_name\":" << quote(f.event_name) << ','
+            << "\"opponent_name\":" << quote(f.opponent_name) << ','
+            << "\"result\":" << quote(f.result) << ','
+            << "\"result_method\":" << quote(f.result_method) << ','
+            << "\"opponent_rank_label\":" << quote(f.opponent_rank_label) << ','
+            << "\"recency\":" << f.recency << ','
+            << "\"opp_quality\":" << f.opp_quality << ','
+            << "\"finish_mult\":" << f.finish_mult << ','
+            << "\"contribution\":" << f.contribution << ','
+            << "\"weighted_contribution\":" << f.weighted_contribution
+            << '}';
+    }
+    oss << ']';
+    if (m.weighted_average) {
+        oss << ",\"weighted_average\":" << *m.weighted_average;
+    }
+    if (m.finish_rate) {
+        oss << ",\"finish_rate\":" << *m.finish_rate;
+    }
+    if (m.finish_boost) {
+        oss << ",\"finish_boost\":" << *m.finish_boost;
+    }
+    if (m.adjusted) {
+        oss << ",\"adjusted\":" << *m.adjusted;
+    }
+    if (m.neutral_score) {
+        oss << ",\"neutral_score\":" << *m.neutral_score;
+    }
+    if (m.max_fight_contribution) {
+        oss << ",\"max_fight_contribution\":" << *m.max_fight_contribution;
+    }
+    oss << '}';
+    return oss.str();
+}
+
+std::string toJson(const ResumeBreakdown& r) {
+    std::ostringstream oss;
+    oss << '{'
+        << "\"score\":" << r.score << ','
+        << "\"ranked_wins\":[";
+    for (size_t i = 0; i < r.ranked_wins.size(); ++i) {
+        if (i > 0) oss << ',';
+        const ResumeWin& w = r.ranked_wins[i];
+        oss << '{'
+            << "\"event_date\":" << quote(w.event_date) << ','
+            << "\"event_name\":" << quote(w.event_name) << ','
+            << "\"opponent_name\":" << quote(w.opponent_name) << ','
+            << "\"result_method\":" << quote(w.result_method) << ','
+            << "\"opponent_rank_label\":" << quote(w.opponent_rank_label) << ','
+            << "\"points\":" << w.points << ','
+            << "\"running_total\":" << w.running_total
+            << '}';
+    }
+    oss << "],\"unranked_win_count\":" << r.unranked_win_count
+        << ",\"skipped_non_decisive\":" << r.skipped_non_decisive
+        << '}';
+    return oss.str();
+}
+
+std::string toJson(const MatchupResponse& response) {
+    std::ostringstream oss;
+    oss << '{'
+        << "\"tape\":" << toJson(response.tape) << ','
+        << "\"history\":{"
+        << "\"prior_meetings\":[";
+    for (size_t i = 0; i < response.history.prior_meetings.size(); ++i) {
+        if (i > 0) oss << ',';
+        oss << toJson(response.history.prior_meetings[i]);
+    }
+    oss << "],\"similar_matchups\":[";
+    for (size_t i = 0; i < response.history.similar_matchups.size(); ++i) {
+        if (i > 0) oss << ',';
+        oss << toJson(response.history.similar_matchups[i]);
+    }
+    oss << "]}," 
+        << "\"no_prediction_reason\":" << optString(response.no_prediction_reason) << ','
+        << "\"resume_breakdown\":{"
+        << "\"fighter_a\":" << toJson(response.resume_breakdown.fighter_a) << ','
+        << "\"fighter_b\":" << toJson(response.resume_breakdown.fighter_b)
+        << "},"
+        << "\"momentum_breakdown\":{"
+        << "\"fighter_a\":" << toJson(response.momentum_breakdown.fighter_a) << ','
+        << "\"fighter_b\":" << toJson(response.momentum_breakdown.fighter_b)
+        << "}}";
+    return oss.str();
+}
+
+std::string toJsonArray(const std::vector<FighterSummary>& fighters) {
+    std::ostringstream oss;
+    oss << '[';
+    for (size_t i = 0; i < fighters.size(); ++i) {
+        if (i > 0) oss << ',';
+        oss << '{'
+            << "\"name\":" << quote(fighters[i].name) << ','
+            << "\"weight_class\":" << optString(fighters[i].weight_class)
+            << '}';
+    }
+    oss << ']';
     return oss.str();
 }
 

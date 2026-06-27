@@ -142,8 +142,8 @@ SimilarMatchupResults findSimilarHistoricalMatchups(
         return results;
     }
 
-    PrefightMatchupIndex prefight_index;
-    if (!prefight_index.build(db)) {
+    const PrefightMatchupIndex& prefight_index = getPrefightMatchupIndex(db);
+    if (prefight_index.empty()) {
         return results;
     }
 

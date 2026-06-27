@@ -16,12 +16,15 @@ Usage:
 
 import argparse
 import hashlib
+import os
 import sqlite3
 import re
+import sys
 import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
+from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
@@ -937,6 +940,96 @@ _archetype_store = None
 _archetype_unavailable = False
 
 
+def _resolve_ufc_db_library() -> Path:
+    """Locate the built ufc_db shared library."""
+    root = Path(__file__).resolve().parent
+    name = "ufc_db.dll" if sys.platform == "win32" else (
+        "libufc_db.dylib" if sys.platform == "darwin" else "libufc_db.so"
+    )
+    for path in (
+        root / "build" / name,
+        root / "build" / "Release" / name,
+        root / "build" / "Debug" / name,
+    ):
+        if path.is_file():
+            return path
+    return root / "build" / "Release" / name
+
+
+class _UfcDbStore:
+    """Minimal ctypes wrapper for scraper score refresh (ufc_db.dll)."""
+
+    def __init__(self, db_path: Path, lib_path: Path) -> None:
+        from ctypes import CDLL, POINTER, byref, c_char_p, c_double, c_int, c_longlong, c_void_p
+
+        if not lib_path.is_file():
+            raise FileNotFoundError(
+                f"ufc_db shared library not found at {lib_path}. "
+                "Build the C++ project first (cmake --build build --config Release)."
+            )
+        if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(str(lib_path.parent))
+
+        self._lib = CDLL(str(lib_path))
+        self._lib.ufc_db_open.restype = c_void_p
+        self._lib.ufc_db_open.argtypes = [c_char_p]
+        self._lib.ufc_db_close.argtypes = [c_void_p]
+        self._lib.ufc_free_string.argtypes = [c_void_p]
+        self._lib.ufc_last_error.restype = c_char_p
+        self._lib.ufc_classify_archetype_by_fighter_id.restype = c_void_p
+        self._lib.ufc_classify_archetype_by_fighter_id.argtypes = [c_void_p, c_longlong]
+        self._lib.ufc_compute_momentum_by_fighter_id_out.argtypes = [
+            c_void_p, c_longlong, POINTER(c_double),
+        ]
+        self._lib.ufc_compute_momentum_by_fighter_id_out.restype = c_int
+        self._lib.ufc_compute_resume_by_fighter_id_out.argtypes = [
+            c_void_p, c_longlong, POINTER(c_double),
+        ]
+        self._lib.ufc_compute_resume_by_fighter_id_out.restype = c_int
+
+        self._handle = self._lib.ufc_db_open(str(db_path).encode("utf-8"))
+        if not self._handle:
+            err = self._lib.ufc_last_error()
+            raise RuntimeError(err.decode("utf-8") if err else "ufc_db_open failed")
+
+    def classify_archetype_by_fighter_id(self, fighter_id: int) -> str | None:
+        from ctypes import string_at
+
+        ptr = self._lib.ufc_classify_archetype_by_fighter_id(self._handle, fighter_id)
+        if not ptr:
+            return None
+        try:
+            return string_at(ptr).decode("utf-8")
+        finally:
+            self._lib.ufc_free_string(ptr)
+
+    def compute_momentum_by_fighter_id(self, fighter_id: int) -> float | None:
+        from ctypes import byref, c_double
+
+        score = c_double()
+        ok = self._lib.ufc_compute_momentum_by_fighter_id_out(
+            self._handle, fighter_id, byref(score)
+        )
+        return float(score.value) if ok else None
+
+    def compute_resume_by_fighter_id(self, fighter_id: int) -> float:
+        from ctypes import byref, c_double
+
+        score = c_double()
+        ok = self._lib.ufc_compute_resume_by_fighter_id_out(
+            self._handle, fighter_id, byref(score)
+        )
+        if not ok:
+            err = self._lib.ufc_last_error()
+            raise RuntimeError(err.decode("utf-8") if err else "resume score failed")
+        return float(score.value)
+
+    def close(self) -> None:
+        if self._handle:
+            self._lib.ufc_db_close(self._handle)
+            self._handle = None
+
+
 def _get_archetype_store():
     """Lazy-open ufc_db shared library for archetype classification."""
     global _archetype_store, _archetype_unavailable
@@ -945,14 +1038,7 @@ def _get_archetype_store():
     if _archetype_store is not None:
         return _archetype_store
     try:
-        import sys
-        from pathlib import Path
-
-        root = Path(__file__).resolve().parent
-        sys.path.insert(0, str(root / "python"))
-        from ufc_db_ffi import UfcDb
-
-        store = UfcDb(DB_PATH)
+        store = _UfcDbStore(DB_PATH, _resolve_ufc_db_library())
         _archetype_store = store
         return store
     except (FileNotFoundError, RuntimeError) as exc:

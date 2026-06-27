@@ -15,6 +15,8 @@ class RoundStats;
 struct StatComparison;
 class Matchup;
 struct SimilarMatchupResults;
+struct MatchupResponse;
+struct FighterSummary;
 
 namespace json {
 
@@ -33,6 +35,9 @@ std::string toJsonArray(const std::vector<Fight>& fights);
 std::string toJsonArray(const std::vector<RoundStats>& stats);
 
 std::string toJsonSimilarMatchups(sqlite3* db, int64_t fighter_a_id, int64_t fighter_b_id, const SimilarMatchupResults& results);
+
+std::string toJson(const MatchupResponse& response);
+std::string toJsonArray(const std::vector<FighterSummary>& fighters);
 
 }  // namespace json
 }  // namespace ufc

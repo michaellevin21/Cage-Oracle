@@ -20,6 +20,10 @@ set(UFC_DB_SOURCES
     src/Matchup.cpp
     src/UfcDatabase.cpp
     src/JsonSerialize.cpp
+    src/ArchetypeMatchupHistory.cpp
+    src/ScoreBreakdown.cpp
+    src/WinProbability.cpp
+    src/MatchupAnalysis.cpp
     src/ufc_db.cpp
 )
 
@@ -39,4 +43,11 @@ set_target_properties(ufc_db PROPERTIES
 if(NOT WIN32)
     target_compile_options(ufc_db PRIVATE -fvisibility=hidden)
     target_compile_options(ufc_db PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-fvisibility-inlines-hidden>")
+endif()
+
+add_executable(ufc_server src/ufc_server.cpp)
+target_include_directories(ufc_server PRIVATE include third_party)
+target_link_libraries(ufc_server PRIVATE ufc_db_static)
+if(WIN32)
+    target_link_libraries(ufc_server PRIVATE ws2_32)
 endif()

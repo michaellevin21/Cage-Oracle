@@ -215,4 +215,14 @@ const std::vector<double>* PrefightMatchupIndex::vectorForFight(int64_t fight_id
     return it == vectors_by_fight_.end() ? nullptr : &it->second;
 }
 
+const PrefightMatchupIndex& getPrefightMatchupIndex(sqlite3* db) {
+    static sqlite3* cached_db = nullptr;
+    static PrefightMatchupIndex cached_index;
+    if (db != cached_db) {
+        cached_db = db;
+        cached_index.build(db);
+    }
+    return cached_index;
+}
+
 }  // namespace ufc

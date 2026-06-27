@@ -39,9 +39,14 @@ public:
     const std::vector<PrefightFightRecord>& fights() const noexcept { return fights_; }
     const std::vector<double>* vectorForFight(int64_t fight_id) const;
 
+    bool empty() const noexcept { return fights_.empty(); }
+
 private:
     std::vector<PrefightFightRecord> fights_;
     std::unordered_map<int64_t, std::vector<double>> vectors_by_fight_;
 };
+
+/// Process-wide cache; rebuilt when the sqlite handle changes.
+const PrefightMatchupIndex& getPrefightMatchupIndex(sqlite3* db);
 
 }  // namespace ufc
