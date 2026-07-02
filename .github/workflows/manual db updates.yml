@@ -3,6 +3,16 @@ on:
   schedule:
     - cron: '0 13 * * 0'
     - cron: '0 5 * * 3'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Which scrape to run'
+        required: true
+        default: 'sync-recent'
+        type: choice
+        options:
+          - sync-recent
+          - rankings-only
 
 permissions:
   contents: write
@@ -15,19 +25,27 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: true
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Sync recent (Sundays)
-        if: github.event.schedule == '0 13 * * 0'
+
+      - name: Sync recent
+        if: github.event.schedule == '0 13 * * 0' || github.event.inputs.mode == 'sync-recent'
         run: python scraper.py --sync-recent --since-days 7
-      - name: Rankings only (Wednesdays)
-        if: github.event.schedule == '0 5 * * 3'
+
+      - name: Rankings only
+        if: github.event.schedule == '0 5 * * 3' || github.event.inputs.mode == 'rankings-only'
         run: python scraper.py --rankings-only
+
       - name: Commit and push DB changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git diff --staged --quiet || git commit -m "Automated DB update [skip ci]"
+          git push
