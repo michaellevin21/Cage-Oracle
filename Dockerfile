@@ -7,7 +7,10 @@ RUN npm run build
 
 FROM debian:bookworm-slim AS cpp-build
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends cmake g++ libsqlite3-dev \
+    && apt-get install -y --no-install-recommends \
+       build-essential \
+       cmake \
+       libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY CMakeLists.txt ./
