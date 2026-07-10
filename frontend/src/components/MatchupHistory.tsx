@@ -59,7 +59,12 @@ function SimilarMatchupWinnerAnnouncement({
 }) {
   const winner = fightWinnerName(fight);
   if (!winner) {
-    return null;
+    return (
+      <span className="history-winner">
+        {" · "}
+        <span className="history-winner-label">Winner:</span> N/A
+      </span>
+    );
   }
 
   const side = fighterSideForName(winner, nameA, nameB);

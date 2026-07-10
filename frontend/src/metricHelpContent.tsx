@@ -13,6 +13,11 @@ const MOMENTUM_HELP = (
     </p>
     <ul>
       <li>
+        Opponent quality (Qual) comes from the opponent&apos;s{" "}
+        <strong>current</strong> ranking: unranked = 0.35, champion = 1.00,
+        #1–#15 scale down from there.
+      </li>
+      <li>
         Wins scale with opponent quality; losses use the same fixed penalty
         regardless of who you lost to
       </li>

@@ -24,7 +24,6 @@ constexpr double kRecencyHalfLifeDays = 365.0;
 constexpr double kMinRecencyWeight = 0.12;
 
 constexpr double kUnrankedOpponentQuality = 0.35;
-constexpr double kTitleFightQualityBonus = 0.12;
 constexpr double kFinishWinMultiplier = 1.30;
 constexpr double kFinishRateBoostWeight = 0.20;
 constexpr double kLossContributionBase = 1.0;
@@ -39,7 +38,6 @@ struct MomentumFight {
     bool lost = false;
     bool is_finish_win = false;
     bool is_finish_loss = false;
-    bool is_title_fight = false;
 };
 
 bool isFinishMethod(const std::string& method) {
@@ -84,7 +82,7 @@ std::optional<int64_t> bestOpponentRank(sqlite3* db, int64_t opponent_id) {
     return rank;
 }
 
-double oppositionQuality(sqlite3* db, int64_t opponent_id, bool is_title_fight) {
+double oppositionQuality(sqlite3* db, int64_t opponent_id) {
     double quality = kUnrankedOpponentQuality;
 
     if (const std::optional<int64_t> rank = bestOpponentRank(db, opponent_id)) {
@@ -93,10 +91,6 @@ double oppositionQuality(sqlite3* db, int64_t opponent_id, bool is_title_fight) 
         } else {
             quality = 1.0 - (static_cast<double>(*rank) / 16.0) * 0.45;
         }
-    }
-
-    if (is_title_fight) {
-        quality = std::min(1.0, quality + kTitleFightQualityBonus);
     }
 
     return quality;
@@ -128,7 +122,7 @@ std::vector<MomentumFight> loadRecentDecisiveFights(sqlite3* db, int64_t fighter
     const char* sql =
         "SELECT e.event_date, "
         "       CASE WHEN f.fighter1_id = ?1 THEN f.fighter2_id ELSE f.fighter1_id END, "
-        "       f.winner_id, f.result_method, f.is_title_fight "
+        "       f.winner_id, f.result_method "
         "FROM fights AS f "
         "INNER JOIN events AS e ON e.id = f.event_id "
         "WHERE f.fighter1_id = ?1 OR f.fighter2_id = ?1 "
@@ -149,7 +143,6 @@ std::vector<MomentumFight> loadRecentDecisiveFights(sqlite3* db, int64_t fighter
         const int64_t opponent_id = db::columnInt64(stmt, 1);
         const int64_t winner_id = db::columnInt64(stmt, 2);
         const std::string result_method = db::columnText(stmt, 3);
-        const bool is_title_fight = db::columnBool(stmt, 4);
 
         if (isNonDecisiveMethod(result_method) || winner_id == 0) {
             continue;
@@ -158,7 +151,6 @@ std::vector<MomentumFight> loadRecentDecisiveFights(sqlite3* db, int64_t fighter
         MomentumFight row;
         row.event_date = event_date;
         row.opponent_id = opponent_id;
-        row.is_title_fight = is_title_fight;
         row.won = winner_id == fighter_id;
         row.lost = !row.won;
         row.is_finish_win = row.won && isFinishMethod(result_method);
@@ -220,7 +212,7 @@ std::optional<double> computeMomentumScore(sqlite3* db, int64_t fighter_id) {
 
     for (const MomentumFight& fight : fights) {
         const double recency = recencyWeight(fight.event_date, now);
-        const double quality = oppositionQuality(db, fight.opponent_id, fight.is_title_fight);
+        const double quality = oppositionQuality(db, fight.opponent_id);
         const double contribution = fightContribution(
             fight.won, fight.is_finish_win, fight.is_finish_loss, quality);
 

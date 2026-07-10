@@ -250,6 +250,16 @@ ComparisonRow buildComparisonRow(
     return out;
 }
 
+std::optional<double> liveMomentumScore(const MomentumBreakdown& breakdown) {
+    if (breakdown.status == "inactive") {
+        return 0.0;
+    }
+    if (breakdown.status == "ok") {
+        return breakdown.score;
+    }
+    return std::nullopt;
+}
+
 TaleOfTheTape buildTape(
     const Matchup& matchup,
     const std::optional<WinProbabilityResult>& win_prob,
@@ -415,7 +425,15 @@ MatchupResponse analyzeMatchup(
         throw std::runtime_error("Fighter not found: " + fighter_b_name);
     }
 
-    const Matchup matchup = Matchup::fromDatabase(db, *fa, *fb);
+    Fighter fighter_a = *fa;
+    Fighter fighter_b = *fb;
+
+    const MomentumBreakdown mom_breakdown_a = buildMomentumBreakdown(db, fighter_a.id);
+    const MomentumBreakdown mom_breakdown_b = buildMomentumBreakdown(db, fighter_b.id);
+    fighter_a.momentum_score = liveMomentumScore(mom_breakdown_a);
+    fighter_b.momentum_score = liveMomentumScore(mom_breakdown_b);
+
+    const Matchup matchup = Matchup::fromDatabase(db, fighter_a, fighter_b);
     const SimilarMatchupResults similar = findSimilarHistoricalMatchups(db, fa->id, fb->id, 0.50);
     const ArchetypeMatchupIndex& index = getArchetypeIndex(db);
 
@@ -438,8 +456,8 @@ MatchupResponse analyzeMatchup(
     response.no_prediction_reason = no_prediction_reason;
     response.resume_breakdown.fighter_a = buildResumeBreakdown(db, fa->id);
     response.resume_breakdown.fighter_b = buildResumeBreakdown(db, fb->id);
-    response.momentum_breakdown.fighter_a = buildMomentumBreakdown(db, fa->id);
-    response.momentum_breakdown.fighter_b = buildMomentumBreakdown(db, fb->id);
+    response.momentum_breakdown.fighter_a = mom_breakdown_a;
+    response.momentum_breakdown.fighter_b = mom_breakdown_b;
     return response;
 }
 

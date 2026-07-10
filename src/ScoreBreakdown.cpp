@@ -23,7 +23,6 @@ constexpr int kInactivityDays = 730;
 constexpr double kRecencyHalfLifeDays = 365.0;
 constexpr double kMinRecencyWeight = 0.12;
 constexpr double kUnrankedOpponentQuality = 0.35;
-constexpr double kTitleFightQualityBonus = 0.12;
 constexpr double kFinishWinMultiplier = 1.30;
 constexpr double kFinishRateBoostWeight = 0.20;
 constexpr double kLossContributionBase = 1.0;
@@ -93,8 +92,7 @@ std::string rankLabel(std::optional<int> rank) {
     return "#" + std::to_string(*rank);
 }
 
-std::pair<double, std::optional<int>> oppositionQuality(
-    sqlite3* db, int64_t opponent_id, bool is_title_fight) {
+std::pair<double, std::optional<int>> oppositionQuality(sqlite3* db, int64_t opponent_id) {
     const auto rank = bestOpponentRank(db, opponent_id);
     double quality = kUnrankedOpponentQuality;
     if (rank) {
@@ -103,9 +101,6 @@ std::pair<double, std::optional<int>> oppositionQuality(
         } else {
             quality = 1.0 - (*rank / 16.0) * 0.45;
         }
-    }
-    if (is_title_fight) {
-        quality = std::min(1.0, quality + kTitleFightQualityBonus);
     }
     return {quality, rank};
 }
@@ -193,7 +188,7 @@ MomentumBreakdown buildMomentumBreakdown(sqlite3* db, int64_t fighter_id) {
     const char* fight_sql =
         "SELECT e.event_date, e.name, "
         "CASE WHEN f.fighter1_id = ? THEN f.fighter2_id ELSE f.fighter1_id END, "
-        "f.winner_id, f.result_method, f.is_title_fight "
+        "f.winner_id, f.result_method "
         "FROM fights f JOIN events e ON e.id = f.event_id "
         "WHERE f.fighter1_id = ? OR f.fighter2_id = ? "
         "ORDER BY e.event_date DESC";
@@ -211,7 +206,6 @@ MomentumBreakdown buildMomentumBreakdown(sqlite3* db, int64_t fighter_id) {
         int64_t opponent_id;
         int64_t winner_id;
         std::string method;
-        bool is_title;
     };
     std::vector<FightRow> rows;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -229,7 +223,6 @@ MomentumBreakdown buildMomentumBreakdown(sqlite3* db, int64_t fighter_id) {
             db::columnInt64(stmt, 2),
             winner_id,
             method,
-            db::columnBool(stmt, 5),
         });
     }
     sqlite3_finalize(stmt);
@@ -245,7 +238,7 @@ MomentumBreakdown buildMomentumBreakdown(sqlite3* db, int64_t fighter_id) {
         const bool finish_loss = !won && isFinishMethod(row.method);
         const double finish_mult = (finish_win || finish_loss) ? kFinishWinMultiplier : 1.0;
         const double rec = recencyWeight(row.event_date, now);
-        const auto [quality, opp_rank] = oppositionQuality(db, row.opponent_id, row.is_title);
+        const auto [quality, opp_rank] = oppositionQuality(db, row.opponent_id);
         const double contribution = fightContribution(won, quality, finish_mult);
         const double weighted = contribution * rec;
 

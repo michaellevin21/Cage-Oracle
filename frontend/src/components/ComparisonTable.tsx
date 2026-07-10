@@ -3,6 +3,8 @@ import type {
   ComparisonRow,
   MatchupMomentumBreakdown,
   MatchupResumeBreakdown,
+  MomentumBreakdown,
+  ResumeBreakdown,
 } from "../types";
 import { HelpPanelScope } from "./HelpPanelContext";
 import { FighterName, fighterNameClass } from "./FighterName";
@@ -53,6 +55,20 @@ function edgeBadgeClass(row: ComparisonRow): string {
   return "edge-badge";
 }
 
+function momentumDisplayValue(breakdown: MomentumBreakdown): string {
+  if (breakdown.score !== null) {
+    return breakdown.score.toFixed(2);
+  }
+  if (breakdown.status === "inactive") {
+    return "0.00";
+  }
+  return "-";
+}
+
+function resumeDisplayValue(breakdown: ResumeBreakdown): string {
+  return String(breakdown.score);
+}
+
 function fighterCellValue(
   row: ComparisonRow,
   side: "a" | "b",
@@ -67,7 +83,7 @@ function fighterCellValue(
       side === "a" ? resumeBreakdown.fighter_a : resumeBreakdown.fighter_b;
     return (
       <span className="metric-value-with-help">
-        <span>{value}</span>
+        <span>{resumeDisplayValue(breakdown)}</span>
         <ResumeBreakdownHelp
           fighterName={fighterName}
           fighterSide={side}
@@ -84,7 +100,7 @@ function fighterCellValue(
         : momentumBreakdown.fighter_b;
     return (
       <span className="metric-value-with-help">
-        <span>{value}</span>
+        <span>{momentumDisplayValue(breakdown)}</span>
         <MomentumBreakdownHelp
           fighterName={fighterName}
           fighterSide={side}

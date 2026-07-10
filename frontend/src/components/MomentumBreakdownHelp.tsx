@@ -12,7 +12,7 @@ function statusMessage(breakdown: MomentumBreakdown): string | null {
     case "no_fights":
       return "No fights on record — momentum cannot be computed.";
     case "inactive":
-      return `Inactive — last fight was ${breakdown.days_since_last_fight} days ago (limit: ${breakdown.inactivity_days} days). Score is 0.`;
+      return `Inactive — last fight was ${Math.floor(breakdown.days_since_last_fight ?? 0)} days ago (limit: ${breakdown.inactivity_days} days). Score is 0.`;
     case "insufficient_fights":
       return `Not enough decisive fights (${breakdown.fights.length}/${breakdown.min_decisive_fights} required).`;
     default:
@@ -77,9 +77,10 @@ export function MomentumBreakdownHelp({
       {breakdown.status === "ok" && (
         <p className="metric-help-footnote">
           Rec = recency weight (1.0 for first year, then decays). Qual = opponent
-          quality from rankings. Wtd = weighted contribution (wins: quality ×
-          finish bonus; losses: −1.00 × finish bonus, then × recency). Finish
-          bonus = 1.30× on KO/TKO/SUB results.
+          quality from current rankings (unranked 0.35, champion 1.00, #1–#15
+          scaled). Wtd = weighted contribution (wins: quality × finish bonus x recency;
+          losses: −1.00 × finish bonus × recency).
+          Finish bonus = 1.30× on KO/TKO/SUB results.
         </p>
       )}
     </MetricHelp>
