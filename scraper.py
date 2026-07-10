@@ -1726,6 +1726,16 @@ def main() -> None:
         close_archetype_store()
         conn.close()
 
+    try:
+        from upcoming_matchups import refresh_upcoming_matchups_cache
+
+        print("Refreshing upcoming matchups cache ...")
+        payload = refresh_upcoming_matchups_cache(Path(DB_PATH))
+        n_events = len(payload.get("events") or [])
+        print(f"  Upcoming matchups cache updated ({n_events} events).")
+    except Exception as exc:
+        print(f"  [warn] upcoming matchups refresh failed: {exc}")
+
 
 if __name__ == "__main__":
     main()

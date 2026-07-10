@@ -111,3 +111,21 @@ export interface MatchupResponse {
   resume_breakdown: MatchupResumeBreakdown;
   momentum_breakdown: MatchupMomentumBreakdown;
 }
+
+export interface UpcomingMatchup {
+  fighter_a: string;
+  fighter_b: string;
+  weight_class: string | null;
+}
+
+export interface UpcomingEvent {
+  event_id: string;
+  name: string;
+  event_date: string | null;
+  matchups: UpcomingMatchup[];
+}
+
+export interface UpcomingMatchupsResponse {
+  events: UpcomingEvent[];
+  detail?: string;
+}

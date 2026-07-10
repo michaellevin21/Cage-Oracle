@@ -388,6 +388,9 @@ std::vector<std::string> ArchetypeMatchupIndex::buildSummaries(
     const std::string& wc_b,
     int min_sample) const {
     std::vector<std::string> summaries;
+    if (arch_a.empty() || arch_b.empty()) {
+        return summaries;
+    }
     const auto weight_classes = resolveMatchupWeightClasses(wc_a, wc_b, ranked_weight_classes_);
     if (weight_classes.empty()) {
         return summaries;

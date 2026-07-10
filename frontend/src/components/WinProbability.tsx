@@ -18,7 +18,9 @@ export function WinProbability({
     if (!noPredictionReason) return null;
     return (
       <section className="prediction-card prediction-muted">
-        <p>{noPredictionReason}</p>
+        <h3 className="section-title">Win Probability</h3>
+        <p className="prediction-headline">N/A</p>
+        <p className="muted">{noPredictionReason}</p>
       </section>
     );
   }

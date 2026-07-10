@@ -55,6 +55,13 @@ function edgeBadgeClass(row: ComparisonRow): string {
   return "edge-badge";
 }
 
+function archetypeDisplayValue(value: string): string {
+  if (!value || value === "-") {
+    return "N/A: Less than 3 rounds of fight data";
+  }
+  return value;
+}
+
 function momentumDisplayValue(breakdown: MomentumBreakdown): string {
   if (breakdown.score !== null) {
     return breakdown.score.toFixed(2);
@@ -108,6 +115,10 @@ function fighterCellValue(
         />
       </span>
     );
+  }
+
+  if (row.metric === "archetype") {
+    return archetypeDisplayValue(value);
   }
 
   return value;

@@ -1,4 +1,5 @@
 import type {
+  ComparisonRow,
   MatchupHistory as HistoryData,
   MatchupMomentumBreakdown,
   MatchupResumeBreakdown,
@@ -24,6 +25,20 @@ function weightClassLine(
   if (!wcA && !wcB) return null;
   if (wcA && wcA === wcB) return wcA;
   return `${wcA || "?"} / ${wcB || "?"}`;
+}
+
+function archetypeRow(tape: TaleOfTheTape): ComparisonRow | undefined {
+  return tape.profile.find((row) => row.metric === "archetype");
+}
+
+function isMissingArchetype(value: string): boolean {
+  return !value || value === "-";
+}
+
+function hasMissingArchetype(tape: TaleOfTheTape): boolean {
+  const row = archetypeRow(tape);
+  if (!row) return false;
+  return isMissingArchetype(row.fighter_a) || isMissingArchetype(row.fighter_b);
 }
 
 export function MatchupView({
@@ -65,16 +80,22 @@ export function MatchupView({
         expandOnHelp
       />
 
-      {tape.archetype_summaries.length > 0 && (
-        <section className="archetype-section">
+      <section className="archetype-section">
           <h3 className="section-title">Historical Style Matchup</h3>
-          <ul className="archetype-list">
-            {tape.archetype_summaries.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
+          {hasMissingArchetype(tape) ? (
+            <p className="muted">
+              N/A: one or both fighter(s) don&apos;t have an archetype
+            </p>
+          ) : tape.archetype_summaries.length > 0 ? (
+            <ul className="archetype-list">
+              {tape.archetype_summaries.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">N/A</p>
+          )}
         </section>
-      )}
 
       <ComparisonTable
         title="Career (per-round & accuracy)"

@@ -5,8 +5,10 @@
 #include "../third_party/httplib.h"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -47,6 +49,16 @@ void printUsage() {
               << "  --db PATH     SQLite database (default: ufc.db in cwd)\n"
               << "  --port N      HTTP port (default: 8000)\n"
               << "  --static DIR  Frontend dist directory (default: frontend/dist)\n";
+}
+
+std::string readTextFile(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        throw std::runtime_error("Failed to read file: " + path.string());
+    }
+    std::ostringstream oss;
+    oss << in.rdbuf();
+    return oss.str();
 }
 
 }  // namespace
@@ -120,6 +132,26 @@ int main(int argc, char* argv[]) {
         }
         const auto fighters = ufc::searchFighters(db, q, limit);
         res.set_content(ufc::json::toJsonArray(fighters), "application/json");
+    });
+
+    server.Get("/api/upcoming/matchups", [&](const httplib::Request&, httplib::Response& res) {
+        const fs::path cache_path = fs::current_path() / ".upcoming_matchups_cache.json";
+        if (!fs::exists(cache_path)) {
+            res.status = 503;
+            res.set_content(
+                "{\"detail\":\"Upcoming matchups cache not found. Run: python upcoming_matchups.py "
+                "--json --output .upcoming_matchups_cache.json\",\"events\":[]}",
+                "application/json");
+            return;
+        }
+        try {
+            res.set_content(readTextFile(cache_path), "application/json");
+        } catch (const std::exception& ex) {
+            res.status = 503;
+            std::ostringstream oss;
+            oss << "{\"detail\":\"" << ufc::json::escape(ex.what()) << "\",\"events\":[]}";
+            res.set_content(oss.str(), "application/json");
+        }
     });
 
     server.Get("/api/matchup", [&](const httplib::Request& req, httplib::Response& res) {

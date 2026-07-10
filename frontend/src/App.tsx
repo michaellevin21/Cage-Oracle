@@ -1,16 +1,21 @@
-import { useEffect, useState, type SubmitEvent } from "react";
+import { useEffect, useRef, useState, type SubmitEvent } from "react";
 import { fetchMatchup } from "./api";
 import { FighterSearch } from "./components/FighterSearch";
 import { MatchupView } from "./components/MatchupView";
+import { UpcomingMatchupsView } from "./components/UpcomingMatchupsView";
 import { readMatchupFromUrl, writeMatchupToUrl } from "./matchupUrl";
 import type { MatchupResponse } from "./types";
 
+type AppTab = "analyze" | "upcoming";
+
 export default function App() {
+  const [activeTab, setActiveTab] = useState<AppTab>("analyze");
   const [fighterA, setFighterA] = useState("");
   const [fighterB, setFighterB] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MatchupResponse | null>(null);
+  const resultsRef = useRef<HTMLElement | null>(null);
 
   async function runAnalysis(nameA: string, nameB: string) {
     setLoading(true);
@@ -63,6 +68,12 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (result && resultsRef.current) {
+      resultsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [result]);
+
   function handleFighterA(name: string) {
     setFighterA(name);
   }
@@ -89,6 +100,13 @@ export default function App() {
     await runAnalysis(fighterA.trim(), fighterB.trim());
   }
 
+  async function handleUpcomingSelect(nameA: string, nameB: string) {
+    setActiveTab("analyze");
+    setFighterA(nameA);
+    setFighterB(nameB);
+    await runAnalysis(nameA, nameB);
+  }
+
   return (
     <div className="app">
       <header className="site-header">
@@ -98,35 +116,61 @@ export default function App() {
         </p>
       </header>
 
+      <nav className="app-tabs" aria-label="Main">
+        <button
+          type="button"
+          className={`app-tab${activeTab === "analyze" ? " active" : ""}`}
+          aria-selected={activeTab === "analyze"}
+          onClick={() => setActiveTab("analyze")}
+        >
+          Analyze Matchup
+        </button>
+        <button
+          type="button"
+          className={`app-tab${activeTab === "upcoming" ? " active" : ""}`}
+          aria-selected={activeTab === "upcoming"}
+          onClick={() => setActiveTab("upcoming")}
+        >
+          Upcoming Matchups
+        </button>
+      </nav>
+
       <main className="main">
-        <form className="search-panel" onSubmit={analyze}>
-          <div className="fighter-fields">
-            <FighterSearch
-              label="Fighter A"
-              side="a"
-              value={fighterA}
-              onChange={handleFighterA}
-              disabled={loading}
-            />
-            <div className="versus-badge" aria-hidden>
-              VS
+        {activeTab === "analyze" ? (
+          <form className="search-panel" onSubmit={analyze}>
+            <div className="fighter-fields">
+              <FighterSearch
+                label="Fighter A"
+                side="a"
+                value={fighterA}
+                onChange={handleFighterA}
+                disabled={loading}
+              />
+              <div className="versus-badge" aria-hidden>
+                VS
+              </div>
+              <FighterSearch
+                label="Fighter B"
+                side="b"
+                value={fighterB}
+                onChange={handleFighterB}
+                disabled={loading}
+              />
             </div>
-            <FighterSearch
-              label="Fighter B"
-              side="b"
-              value={fighterB}
-              onChange={handleFighterB}
-              disabled={loading}
-            />
-          </div>
-          <button
-            type="submit"
-            className="analyze-btn"
-            disabled={loading || !canAnalyze}
-          >
-            {loading ? "Analyzing…" : "Analyze Matchup"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              className="analyze-btn"
+              disabled={loading || !canAnalyze}
+            >
+              {loading ? "Analyzing…" : "Analyze Matchup"}
+            </button>
+          </form>
+        ) : (
+          <UpcomingMatchupsView
+            onSelectMatchup={handleUpcomingSelect}
+            disabled={loading}
+          />
+        )}
 
         {error && (
           <div className="error-banner" role="alert">
@@ -135,13 +179,15 @@ export default function App() {
         )}
 
         {result && (
-          <MatchupView
-            tape={result.tape}
-            history={result.history}
-            noPredictionReason={result.no_prediction_reason}
-            resumeBreakdown={result.resume_breakdown}
-            momentumBreakdown={result.momentum_breakdown}
-          />
+          <section ref={resultsRef}>
+            <MatchupView
+              tape={result.tape}
+              history={result.history}
+              noPredictionReason={result.no_prediction_reason}
+              resumeBreakdown={result.resume_breakdown}
+              momentumBreakdown={result.momentum_breakdown}
+            />
+          </section>
         )}
       </main>
     </div>

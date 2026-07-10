@@ -1,4 +1,4 @@
-import type { FighterSummary, MatchupResponse } from "./types";
+import type { FighterSummary, MatchupResponse, UpcomingMatchupsResponse } from "./types";
 
 async function apiFetch<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -29,4 +29,8 @@ export function fetchMatchup(
     fighter_b: fighterB,
   });
   return apiFetch(`/api/matchup?${params}`);
+}
+
+export function fetchUpcomingMatchups(): Promise<UpcomingMatchupsResponse> {
+  return apiFetch("/api/upcoming/matchups");
 }
