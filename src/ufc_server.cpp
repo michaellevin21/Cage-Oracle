@@ -4,6 +4,7 @@
 
 #include "../third_party/httplib.h"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -67,6 +68,7 @@ int main(int argc, char* argv[]) {
     fs::path db_path = "ufc.db";
     fs::path static_dir = "frontend/dist";
     int port = 8000;
+    bool port_from_args = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -74,6 +76,7 @@ int main(int argc, char* argv[]) {
             db_path = argv[++i];
         } else if (arg == "--port" && i + 1 < argc) {
             port = std::stoi(argv[++i]);
+            port_from_args = true;
         } else if (arg == "--static" && i + 1 < argc) {
             static_dir = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
@@ -83,6 +86,17 @@ int main(int argc, char* argv[]) {
             std::cerr << "Unknown argument: " << arg << '\n';
             printUsage();
             return 1;
+        }
+    }
+
+    if (!port_from_args) {
+        if (const char* port_env = std::getenv("PORT")) {
+            try {
+                port = std::stoi(port_env);
+            } catch (...) {
+                std::cerr << "Invalid PORT environment variable: " << port_env << '\n';
+                return 1;
+            }
         }
     }
 
@@ -189,7 +203,7 @@ int main(int argc, char* argv[]) {
         server.set_mount_point("/", static_dir.string());
     }
 
-    std::cout << "UFC Matchup Analyzer server on http://127.0.0.1:" << port << '\n';
+    std::cout << "UFC Matchup Analyzer server on http://0.0.0.0:" << port << '\n';
     std::cout << "Database: " << db_path_str << '\n';
     if (static_exists) {
         std::cout << "Serving static files from: " << fs::absolute(static_dir) << '\n';
@@ -197,7 +211,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Static dir not found (" << static_dir << "); API only.\n";
     }
 
-    if (!server.listen("127.0.0.1", port)) {
+    if (!server.listen("0.0.0.0", port)) {
         std::cerr << "Failed to listen on port " << port << '\n';
         return 1;
     }

@@ -1,0 +1,12 @@
+.venv/
+build/
+build-asan/
+build-linux/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.git/
+*.db-shm
+*.db-wal
+ufc_debug.db
+ufc.db.bak*

@@ -1,0 +1,10 @@
+{
+  "name": "ufc-matchup-analyzer-root",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "npm --prefix frontend ci && npm --prefix frontend run build"
+  }
+}
