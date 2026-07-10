@@ -1,5 +1,7 @@
 #include "ufc/FighterCareerStats.hpp"
 
+#include <limits>
+
 namespace ufc {
 
 FighterCareerStats FighterCareerStats::fromRoundStats(
