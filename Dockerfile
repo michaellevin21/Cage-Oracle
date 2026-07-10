@@ -5,6 +5,13 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
+FROM python:3.12-slim AS upcoming-cache
+WORKDIR /src
+COPY requirements.txt upcoming_matchups.py scraper.py ./
+COPY ufc.db ./ufc.db
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python upcoming_matchups.py --json --output .upcoming_matchups_cache.json
+
 FROM debian:bookworm-slim AS cpp-build
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -28,6 +35,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=cpp-build /src/build/ufc_server_app ./ufc_server_app
 COPY --from=frontend /src/frontend/dist ./frontend/dist
+COPY --from=upcoming-cache /src/.upcoming_matchups_cache.json ./.upcoming_matchups_cache.json
 COPY ufc.db ./ufc.db
 ENV PORT=8000
 EXPOSE 8000
