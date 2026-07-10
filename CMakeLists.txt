@@ -4,7 +4,28 @@ project(ufc_matchup_analyzer LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(SQLite3 REQUIRED)
+if(WIN32)
+    find_package(SQLite3 REQUIRED)
+    if(NOT TARGET SQLite3::SQLite3)
+        if(NOT SQLite3_LIBRARIES)
+            set(SQLite3_LIBRARIES "${SQLite3_LIBRARY}")
+        endif()
+        if(NOT SQLite3_INCLUDE_DIRS)
+            set(SQLite3_INCLUDE_DIRS "${SQLite3_INCLUDE_DIR}")
+        endif()
+        add_library(SQLite3::SQLite3 UNKNOWN IMPORTED)
+        set_target_properties(SQLite3::SQLite3 PROPERTIES
+            IMPORTED_LOCATION "${SQLite3_LIBRARIES}"
+            INTERFACE_INCLUDE_DIRECTORIES "${SQLite3_INCLUDE_DIRS}")
+    endif()
+else()
+    find_library(UFC_SQLITE3_LIBRARY NAMES sqlite3 REQUIRED)
+    find_path(UFC_SQLITE3_INCLUDE_DIR NAMES sqlite3.h REQUIRED)
+    add_library(SQLite3::SQLite3 UNKNOWN IMPORTED GLOBAL)
+    set_target_properties(SQLite3::SQLite3 PROPERTIES
+        IMPORTED_LOCATION "${UFC_SQLITE3_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${UFC_SQLITE3_INCLUDE_DIR}")
+endif()
 
 set(UFC_DB_SOURCES
     src/Fighter.cpp

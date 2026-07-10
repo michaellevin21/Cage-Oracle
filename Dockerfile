@@ -10,6 +10,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential \
        cmake \
+       pkg-config \
        libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
