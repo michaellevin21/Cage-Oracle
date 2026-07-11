@@ -12,6 +12,8 @@ interface HelpPanelContextValue {
   openId: string | null;
   openHelp: (id: string) => void;
   closeHelp: (id: string) => void;
+  /** True when opening this help will grow the section (first help in scope). */
+  sectionExpanding: boolean;
 }
 
 const HelpPanelContext = createContext<HelpPanelContextValue | null>(null);
@@ -26,22 +28,32 @@ export function HelpPanelScope({
   onAnyOpenChange,
 }: HelpPanelScopeProps) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [sectionExpanding, setSectionExpanding] = useState(false);
 
   useEffect(() => {
     onAnyOpenChange(openId !== null);
   }, [openId, onAnyOpenChange]);
 
   const openHelp = useCallback((id: string) => {
-    setOpenId(id);
+    setOpenId((current) => {
+      setSectionExpanding(current === null);
+      return id;
+    });
   }, []);
 
   const closeHelp = useCallback((id: string) => {
-    setOpenId((current) => (current === id ? null : current));
+    setOpenId((current) => {
+      if (current === id) {
+        setSectionExpanding(false);
+        return null;
+      }
+      return current;
+    });
   }, []);
 
   const value = useMemo(
-    () => ({ openId, openHelp, closeHelp }),
-    [openId, openHelp, closeHelp],
+    () => ({ openId, openHelp, closeHelp, sectionExpanding }),
+    [openId, openHelp, closeHelp, sectionExpanding],
   );
 
   return (

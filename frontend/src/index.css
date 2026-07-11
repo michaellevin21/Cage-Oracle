@@ -579,12 +579,26 @@ button.suggestion-active {
   opacity: 1;
 }
 
+/* Sticky variant: keep the chevron pinned near the viewport center so it stays
+   visible while any part of a tall table is on screen. It is bounded by the
+   cue container (full table height), so it rides the table edges in/out of view. */
+.table-scroll-sticky-cue .table-scroll-cue {
+  align-items: flex-start;
+}
+
+.table-scroll-sticky-cue .table-scroll-cue-chevron {
+  position: sticky;
+  top: clamp(0.35rem, calc(50vh - 0.8rem), 100%);
+}
+
 .table-scroll-cue-chevron {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 1.6rem;
   height: 1.6rem;
+  padding: 0;
+  border: none;
   border-radius: 50%;
   background: rgba(210, 10, 10, 0.9);
   color: #fff;
@@ -592,7 +606,18 @@ button.suggestion-active {
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  pointer-events: auto;
   animation: table-scroll-nudge 1.4s ease-in-out infinite;
+}
+
+.table-scroll-cue-chevron:hover {
+  background: var(--accent);
+}
+
+.table-scroll-cue-chevron:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 
 @keyframes table-scroll-nudge {

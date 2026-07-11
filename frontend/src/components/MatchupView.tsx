@@ -102,6 +102,7 @@ export function MatchupView({
         rows={tape.career}
         nameA={fa.name}
         nameB={fb.name}
+        stickyScrollCue
       />
 
       <MatchupHistory

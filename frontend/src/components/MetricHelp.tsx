@@ -16,6 +16,53 @@ function isHelpButtonInScope(target: EventTarget | null): boolean {
   );
 }
 
+function scrollPopoverIntoView(popover: HTMLElement) {
+  const prefersReducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  popover.scrollIntoView({
+    block: "nearest",
+    inline: "nearest",
+    behavior: prefersReducedMotion ? "auto" : "smooth",
+  });
+}
+
+/** Run `run` after the comparison section expand animation, or on the next frame if none. */
+function afterSectionExpand(
+  section: HTMLElement | null,
+  waitForExpand: boolean,
+  run: () => void,
+): () => void {
+  if (!section || !waitForExpand) {
+    const frame = requestAnimationFrame(run);
+    return () => cancelAnimationFrame(frame);
+  }
+
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    run();
+  };
+
+  const onTransitionEnd = (e: TransitionEvent) => {
+    if (e.target !== section) return;
+    if (e.propertyName !== "min-height" && e.propertyName !== "padding-bottom") {
+      return;
+    }
+    finish();
+  };
+
+  section.addEventListener("transitionend", onTransitionEnd);
+  const fallback = window.setTimeout(finish, 280);
+
+  return () => {
+    done = true;
+    section.removeEventListener("transitionend", onTransitionEnd);
+    window.clearTimeout(fallback);
+  };
+}
+
 export function MetricHelp({ title, wide, titleTone, children }: MetricHelpProps) {
   const helpId = useId();
   const [localOpen, setLocalOpen] = useState(false);
@@ -52,22 +99,19 @@ export function MetricHelp({ title, wide, titleTone, children }: MetricHelpProps
     return () => document.removeEventListener("mousedown", onDocPointerDown);
   }, [open, helpId, helpPanel]);
 
-  // Once the popover is open (and any section-expand animation has settled),
-  // scroll it fully into view if it extends past the viewport.
+  // Scroll the popover into view once layout is ready (after section expand, if any).
   useEffect(() => {
     if (!open) return;
-    const prefersReducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    const timer = window.setTimeout(() => {
-      popoverRef.current?.scrollIntoView({
-        block: "nearest",
-        inline: "nearest",
-        behavior: prefersReducedMotion ? "auto" : "smooth",
-      });
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [open]);
+    const popover = popoverRef.current;
+    if (!popover) return;
+
+    const section = popover.closest<HTMLElement>(".comparison-section");
+    const waitForExpand = helpPanel?.sectionExpanding ?? false;
+
+    return afterSectionExpand(section, waitForExpand, () => {
+      scrollPopoverIntoView(popover);
+    });
+  }, [open, helpPanel?.sectionExpanding]);
 
   return (
     <span className="metric-help-wrap" ref={wrapRef}>

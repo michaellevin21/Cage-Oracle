@@ -21,6 +21,8 @@ interface ComparisonTableProps {
   resumeBreakdown?: MatchupResumeBreakdown;
   momentumBreakdown?: MatchupMomentumBreakdown;
   expandOnHelp?: boolean;
+  /** Keep the scroll cue pinned in view while any part of the table is on screen. */
+  stickyScrollCue?: boolean;
 }
 
 const METRICS_WITHOUT_EDGE = new Set([
@@ -133,10 +135,24 @@ export function ComparisonTable({
   resumeBreakdown,
   momentumBreakdown,
   expandOnHelp = false,
+  stickyScrollCue = false,
 }: ComparisonTableProps) {
   const [helpOpen, setHelpOpen] = useState(false);
   const { ref: scrollRef, overflowStart, overflowEnd } =
     useScrollHint<HTMLDivElement>();
+
+  function scrollRight() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const amount = Math.max(el.clientWidth * 0.8, 120);
+    el.scrollBy({
+      left: amount,
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+    });
+  }
 
   if (rows.length === 0) return null;
 
@@ -151,7 +167,7 @@ export function ComparisonTable({
     <section className={sectionClass}>
       <h3 className="section-title">{title}</h3>
       <div
-        className="table-scroll"
+        className={`table-scroll${stickyScrollCue ? " table-scroll-sticky-cue" : ""}`}
         data-overflow-start={overflowStart}
         data-overflow-end={overflowEnd}
       >
@@ -211,8 +227,16 @@ export function ComparisonTable({
           </tbody>
           </table>
         </div>
-        <span className="table-scroll-cue" aria-hidden="true">
-          <span className="table-scroll-cue-chevron">›</span>
+        <span className="table-scroll-cue">
+          <button
+            type="button"
+            className="table-scroll-cue-chevron"
+            aria-label="Scroll table right"
+            tabIndex={overflowEnd ? 0 : -1}
+            onClick={scrollRight}
+          >
+            ›
+          </button>
         </span>
       </div>
     </section>
