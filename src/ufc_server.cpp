@@ -203,7 +203,7 @@ int main(int argc, char* argv[]) {
         server.set_mount_point("/", static_dir.string());
     }
 
-    std::cout << "UFC Matchup Analyzer server on http://0.0.0.0:" << port << '\n';
+    std::cout << "Cage Oracle server on http://0.0.0.0:" << port << '\n';
     std::cout << "Database: " << db_path_str << '\n';
     if (static_exists) {
         std::cout << "Serving static files from: " << fs::absolute(static_dir) << '\n';

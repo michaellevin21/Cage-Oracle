@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: ufc-matchup-analyzer
+    name: cage-oracle
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile

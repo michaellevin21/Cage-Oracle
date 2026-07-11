@@ -1,5 +1,5 @@
 {
-  "name": "ufc-matchup-analyzer-root",
+  "name": "cage-oracle-root",
   "private": true,
   "engines": {
     "node": ">=20.0.0"
