@@ -11,6 +11,7 @@ import { FighterName, fighterNameClass } from "./FighterName";
 import { metricHelpFor } from "../metricHelpContent";
 import { MomentumBreakdownHelp } from "./MomentumBreakdownHelp";
 import { ResumeBreakdownHelp } from "./ResumeBreakdownHelp";
+import { useScrollHint } from "./useScrollHint";
 
 interface ComparisonTableProps {
   title: string;
@@ -134,6 +135,8 @@ export function ComparisonTable({
   expandOnHelp = false,
 }: ComparisonTableProps) {
   const [helpOpen, setHelpOpen] = useState(false);
+  const { ref: scrollRef, overflowStart, overflowEnd } =
+    useScrollHint<HTMLDivElement>();
 
   if (rows.length === 0) return null;
 
@@ -147,8 +150,19 @@ export function ComparisonTable({
   const content = (
     <section className={sectionClass}>
       <h3 className="section-title">{title}</h3>
-      <div className="table-wrap">
-        <table className="comparison-table">
+      <div
+        className="table-scroll"
+        data-overflow-start={overflowStart}
+        data-overflow-end={overflowEnd}
+      >
+        <div
+          className="table-wrap"
+          ref={scrollRef}
+          tabIndex={0}
+          role="region"
+          aria-label={`${title} comparison, scroll horizontally to see more`}
+        >
+          <table className="comparison-table">
           <thead>
             <tr>
               <th className="col-metric">Metric</th>
@@ -195,7 +209,11 @@ export function ComparisonTable({
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
+        <span className="table-scroll-cue" aria-hidden="true">
+          <span className="table-scroll-cue-chevron">›</span>
+        </span>
       </div>
     </section>
   );

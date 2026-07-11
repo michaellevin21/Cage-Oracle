@@ -515,8 +515,100 @@ button.suggestion-active {
   overflow: visible;
 }
 
+.table-scroll {
+  position: relative;
+}
+
 .table-wrap {
   overflow-x: auto;
+}
+
+.table-wrap:focus-visible {
+  outline: 2px solid rgba(210, 10, 10, 0.5);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Edge fades: shown only when there is more content to scroll toward. */
+.table-scroll::before,
+.table-scroll::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2.5rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 5;
+}
+
+.table-scroll::before {
+  left: 0;
+  background: linear-gradient(to right, var(--surface), rgba(20, 20, 22, 0));
+}
+
+.table-scroll::after {
+  right: 0;
+  background: linear-gradient(to left, var(--surface), rgba(20, 20, 22, 0));
+}
+
+.table-scroll[data-overflow-start="true"]::before {
+  opacity: 1;
+}
+
+.table-scroll[data-overflow-end="true"]::after {
+  opacity: 1;
+}
+
+/* Pulsing chevron cue, shown while more content remains to the right. */
+.table-scroll-cue {
+  position: absolute;
+  top: 0;
+  right: 0.35rem;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 6;
+}
+
+.table-scroll[data-overflow-end="true"] .table-scroll-cue {
+  opacity: 1;
+}
+
+.table-scroll-cue-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: rgba(210, 10, 10, 0.9);
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  animation: table-scroll-nudge 1.4s ease-in-out infinite;
+}
+
+@keyframes table-scroll-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-scroll-cue-chevron {
+    animation: none;
+  }
 }
 
 .comparison-table {
@@ -579,6 +671,7 @@ button.suggestion-active {
   left: 0;
   top: calc(100% + 6px);
   width: min(320px, 80vw);
+  scroll-margin: 16px;
   padding: 0.85rem 1rem;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -699,6 +792,24 @@ button.suggestion-active {
   text-align: left;
   color: var(--muted);
   font-weight: 500;
+  position: sticky;
+  left: 0;
+  z-index: 7;
+  background: var(--surface);
+  box-shadow: 4px 0 6px -4px rgba(0, 0, 0, 0.55);
+}
+
+/* Sticky metric column has no separating shadow when nothing is scrolled under it. */
+.table-scroll:not([data-overflow-start="true"]) .comparison-table th.col-metric,
+.table-scroll:not([data-overflow-start="true"]) .comparison-table td.col-metric {
+  box-shadow: none;
+}
+
+/* Keep the metric column above the left edge fade so it stays readable. */
+.comparison-section-help-open .comparison-table th.col-metric,
+.comparison-section-help-open .comparison-table td.col-metric {
+  position: static;
+  box-shadow: none;
 }
 
 .comparison-table tbody tr:last-child td {
