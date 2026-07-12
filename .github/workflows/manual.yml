@@ -1,0 +1,13 @@
+name: Keep Cage Oracle Server Awake
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Cage Oracle service
+        run: curl -sf https://cage-oracle.com/ || echo "Ping failed, but continuing"
