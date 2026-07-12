@@ -112,7 +112,7 @@ export default function App() {
       <header className="site-header">
         <h1>Cage Oracle</h1>
         <p className="tagline">
-          Side-by-side tale of the tape, style history, and win probability
+          Side-by-side matchup analysis, fighter history, and win probability for UFC matchups
         </p>
       </header>
 
