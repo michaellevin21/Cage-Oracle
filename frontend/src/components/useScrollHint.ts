@@ -20,8 +20,17 @@ export function useScrollHint<T extends HTMLElement>(): ScrollHint<T> {
   const update = useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    const { scrollLeft, scrollWidth, clientWidth } = el;
-    const maxScroll = scrollWidth - clientWidth;
+    const { scrollLeft, clientWidth } = el;
+    // Measure the content's own layout width rather than el.scrollWidth. When a
+    // help popover opens the scroll container switches to overflow: visible, and
+    // the absolutely-positioned popover (which sticks out past the table's right
+    // edge) would inflate scrollWidth and trigger a phantom scroll cue. The child
+    // element's border box excludes such out-of-flow descendants.
+    const child = el.firstElementChild;
+    const contentWidth = child
+      ? child.getBoundingClientRect().width
+      : el.scrollWidth;
+    const maxScroll = contentWidth - clientWidth;
     const scrollable = maxScroll > 1;
     setOverflowStart(scrollable && scrollLeft > 1);
     setOverflowEnd(scrollable && scrollLeft < maxScroll - 1);
