@@ -167,7 +167,7 @@ std::string formatStyleSentence(
     double win_pct, const std::string& wc, int decisive) {
     const char* fight_word = decisive == 1 ? "fight" : "fights";
     char buf[512];
-    std::snprintf(buf, sizeof(buf), "%s win %.0f%% against %s at %s (%d %s).",
+    std::snprintf(buf, sizeof(buf), "%s win %.0f%% of fights against %s at %s (%d %s).",
         archetypePlural(arch_a).c_str(), win_pct,
         archetypePlural(arch_b).c_str(), wc.c_str(), decisive, fight_word);
     return buf;

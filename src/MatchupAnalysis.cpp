@@ -260,6 +260,10 @@ std::optional<double> liveMomentumScore(const MomentumBreakdown& breakdown) {
     return std::nullopt;
 }
 
+std::optional<double> liveResumeScore(const ResumeBreakdown& breakdown) {
+    return static_cast<double>(breakdown.score);
+}
+
 TaleOfTheTape buildTape(
     const Matchup& matchup,
     const std::optional<WinProbabilityResult>& win_prob,
@@ -428,6 +432,11 @@ MatchupResponse analyzeMatchup(
     Fighter fighter_a = *fa;
     Fighter fighter_b = *fb;
 
+    const ResumeBreakdown resume_breakdown_a = buildResumeBreakdown(db, fighter_a.id);
+    const ResumeBreakdown resume_breakdown_b = buildResumeBreakdown(db, fighter_b.id);
+    fighter_a.resume_score = liveResumeScore(resume_breakdown_a);
+    fighter_b.resume_score = liveResumeScore(resume_breakdown_b);
+
     const MomentumBreakdown mom_breakdown_a = buildMomentumBreakdown(db, fighter_a.id);
     const MomentumBreakdown mom_breakdown_b = buildMomentumBreakdown(db, fighter_b.id);
     fighter_a.momentum_score = liveMomentumScore(mom_breakdown_a);
@@ -454,8 +463,8 @@ MatchupResponse analyzeMatchup(
     response.tape = buildTape(matchup, win_prob, summaries);
     response.history = buildHistory(db, similar);
     response.no_prediction_reason = no_prediction_reason;
-    response.resume_breakdown.fighter_a = buildResumeBreakdown(db, fa->id);
-    response.resume_breakdown.fighter_b = buildResumeBreakdown(db, fb->id);
+    response.resume_breakdown.fighter_a = resume_breakdown_a;
+    response.resume_breakdown.fighter_b = resume_breakdown_b;
     response.momentum_breakdown.fighter_a = mom_breakdown_a;
     response.momentum_breakdown.fighter_b = mom_breakdown_b;
     return response;

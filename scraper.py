@@ -928,8 +928,12 @@ def sync_recent_events(conn: sqlite3.Connection, since_days: int = 14) -> None:
     if fighters_to_refresh:
         refresh_fighter_archetypes(conn, fighters_to_refresh)
         refresh_fighter_momentum(conn, fighters_to_refresh)
+        refresh_fighter_resume(conn, fighters_to_refresh)
         conn.commit()
-        print(f"  Recalculated archetypes and momentum for {len(fighters_to_refresh)} fighter(s) with new fight data.")
+        print(
+            f"  Recalculated archetypes, momentum, and resume for "
+            f"{len(fighters_to_refresh)} fighter(s) with new fight data."
+        )
     else:
         print("  No new fight data; archetypes unchanged.")
 

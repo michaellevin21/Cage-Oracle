@@ -16,7 +16,7 @@ namespace {
 constexpr double kWeightCareer = 0.28;
 constexpr double kWeightPhysical = 0.10;
 constexpr double kWeightStyle = 0.20;
-constexpr double kWeightResume = 0.18;
+constexpr double kWeightResume = 0.06;
 constexpr double kWeightMomentum = 0.18;
 constexpr double kWeightSimilar = 0.14;
 constexpr double kWeightH2HOne = 0.17;
