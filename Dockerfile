@@ -10,7 +10,8 @@ WORKDIR /src
 COPY requirements.txt upcoming_matchups.py scraper.py ./
 COPY ufc.db ./ufc.db
 RUN pip install --no-cache-dir -r requirements.txt \
-    && python upcoming_matchups.py --json --output .upcoming_matchups_cache.json
+    && python upcoming_matchups.py --json --no-sync-fighters --allow-empty-on-error \
+       --output .upcoming_matchups_cache.json
 
 FROM debian:bookworm-slim AS cpp-build
 RUN apt-get update \

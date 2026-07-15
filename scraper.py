@@ -79,10 +79,10 @@ def _solve_ufcstats_pow(nonce: str, zeros: int) -> int:
         n += 1
 
 
-def _fetch_ufcstats_html(url: str) -> str:
-    """GET a ufcstats.com page, solving the JS proof-of-work gate when present."""
+def _fetch_ufcstats_html_once(url: str) -> str:
+    """Single attempt to GET a ufcstats.com page (may return the anti-bot challenge)."""
     session = _get_ufcstats_session()
-    response = session.get(url, headers=HEADERS, timeout=15)
+    response = session.get(url, headers=HEADERS, timeout=30)
     response.raise_for_status()
     if not _is_ufcstats_challenge(response.text):
         return response.text
@@ -96,15 +96,30 @@ def _fetch_ufcstats_html(url: str) -> str:
         f"{BASE_URL}/__c",
         data={"nonce": nonce, "n": str(solution)},
         headers={**HEADERS, "Content-Type": "application/x-www-form-urlencoded"},
-        timeout=15,
+        timeout=30,
     )
     post.raise_for_status()
 
-    retry = session.get(url, headers=HEADERS, timeout=15)
+    retry = session.get(url, headers=HEADERS, timeout=30)
     retry.raise_for_status()
     if _is_ufcstats_challenge(retry.text):
         raise RuntimeError(f"ufcstats anti-bot challenge still active after solve ({url})")
     return retry.text
+
+
+def _fetch_ufcstats_html(url: str, *, attempts: int = 3) -> str:
+    """GET a ufcstats.com page, solving the JS proof-of-work gate when present."""
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return _fetch_ufcstats_html_once(url)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            last_error = exc
+            if attempt + 1 < attempts:
+                time.sleep(min(2 ** attempt, 8))
+                continue
+            raise
+    raise last_error  # pragma: no cover
 
 
 # ─────────────────────────────────────────────────────────────

@@ -170,6 +170,11 @@ def main() -> int:
         action="store_true",
         help="Do not scrape missing fighters into the database",
     )
+    parser.add_argument(
+        "--allow-empty-on-error",
+        action="store_true",
+        help="On scrape failure, still write --output and exit 0 (for Docker builds)",
+    )
     args = parser.parse_args()
 
     sync_fighters = not args.no_sync_fighters
@@ -188,12 +193,16 @@ def main() -> int:
             )
     except Exception as exc:
         payload = {"events": [], "detail": str(exc)}
+        if args.output:
+            args.output.write_text(json.dumps(payload), encoding="utf-8")
 
     if args.json or args.output:
         if not args.output:
             encoded = json.dumps(payload)
             print(encoded, flush=True)
-        return 0 if "detail" not in payload else 1
+        if "detail" in payload and not args.allow_empty_on_error:
+            return 1
+        return 0
     else:
         for event in payload["events"]:
             print(f"{event['name']} — {event.get('event_date') or 'Date TBD'}")
